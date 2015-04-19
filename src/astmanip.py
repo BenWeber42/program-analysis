@@ -12,6 +12,7 @@
 
 import z3
 import ast
+from compiler.ast import Node
 
 #
 # expects global var cond_context: class with methods 
@@ -24,6 +25,7 @@ class InstrumentingVisitor(ast.NodeTransformer):
     def __init__(self):
         self.refCnt=0
         self.outer=-1
+        self.unknowns={}
 
     ctx_var=ast.Name(id='cond_context',ctx=ast.Load())
     
@@ -41,7 +43,19 @@ class InstrumentingVisitor(ast.NodeTransformer):
     def generic_visit(self, node):
         #print ast.dump(node)
         prevOuter=self.outer
-        if node.__class__.__name__ == 'If' :
+        
+        if node.__class__.__name__ == 'Call' and node.func.__class__.__name__ == 'Name':
+            if node.func.id=='unknown_int':
+                node.func=ast.Attribute(value=InstrumentingVisitor.ctx_var,attr="unknown_int",ctx=ast.Load())
+                node.args.insert(0,ast.Num(n=self.refCnt))
+                self.unknowns[self.refCnt]=node
+                self.refCnt=self.refCnt+1
+            elif node.func.id=='unknown_choice': 
+                node.func=ast.Attribute(value=InstrumentingVisitor.ctx_var,attr="unknown_choice",ctx=ast.Load())
+                node.args.insert(0,ast.Num(n=self.refCnt))
+                self.unknowns[self.refCnt]=node
+                self.refCnt=self.refCnt+1
+        elif node.__class__.__name__ == 'If' :
             #print ast.dump(node.test)
             t=node.test
             node.test=self.gen_wrap_call(t)
@@ -84,6 +98,8 @@ class SymExecContext:
         self.fullcond={}
         self.choice=-1
         self.maxChoice=1<<count
+        self.unknown_ints={}
+        self.unknown_choices={}
 
 
     def wrap_condition(self,ref,cond_in,outer):
@@ -103,6 +119,32 @@ class SymExecContext:
     def instrument(self,ref,label):
         pass
         #print "instrument {0}, label={1}\n".format(ref,label)
+    
+    def unknown_int(self,refNo):
+        if self.unknown_ints.has_key(refNo):
+            return self.unknown_ints[refNo]
+        
+        v=z3.Int('Num'+str(refNo))
+        self.unknown_ints[refNo]=v
+        return v
+    
+    def unknown_choice(self,refNo,*args):
+        if self.unknown_choices.has_key(refNo):
+            return self.unknown_choices[refNo][0]
+        
+        ch=[]
+        vr=z3.Int('Var'+str(refNo))
+        sm=0
+        for i in range(0,len(args)):
+            ex=args[i]
+            v=z3.Int('Sel'+str(refNo)+'_'+str(i))
+            ch.append(z3.Implies(v==1,vr==ex))
+            ch.append(z3.Or(v==0,v==1))
+            sm=sm+v
+        
+        ch.append(sm==1)
+        self.unknown_choices[refNo]=(vr,z3.And(*ch))
+        return vr        
     
     def nextPath(self):
         self.choice=self.choice+1

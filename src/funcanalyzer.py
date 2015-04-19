@@ -13,7 +13,8 @@
 import z3
 import inspect
 import ast
-from unparse import  * ## REMOVE
+import unparse
+#from unparse import  * ## REMOVE
 from astmanip import * ## REMOVE
 
 # Test Cases: 
@@ -24,22 +25,22 @@ from astmanip import * ## REMOVE
 #    Overflow
 
 class FuncAnalyzer:
-    def __init__(self,astTree):
+    def __init__(self,astTree,fname='f'):
         self.tree=astTree
 
         vv=InstrumentingVisitor()
         vv.visit(astTree)
         #print ast.dump(tree.body[0])
         ast.fix_missing_locations(astTree)
-        #Unparser(tree)
+        unparse.Unparser(astTree)
         comp=compile(astTree, "<no>", "exec")
         self.context=SymExecContext(vv.refCnt)
         sc={"cond_context":self.context}
         sc2={}
         exec(comp,sc,sc2)
-        spec=inspect.getargspec(sc2['f'])
-        self.func=sc2['f']
-
+        spec=inspect.getargspec(sc2[fname])
+        self.func=sc2[fname]
+        
         self.outVars=[]
         for i in range(0,len(spec.args)):
             self.outVars.append(z3.Int('Out'+str(i)))
@@ -51,6 +52,8 @@ class FuncAnalyzer:
     def pathCondition(self):
         return z3.And(*(self.context.cond.values()))
 
+    def unknownsCondition(self):
+        return [ x[1] for x in self.context.unknown_choices.values() ]
 
     def matchVars(self,v,data):
         cond=[]
@@ -68,9 +71,13 @@ class FuncAnalyzer:
         condProg=[]
     
         while self.context.nextPath():
+            #print self.func
             res=self.func.__call__(*self.inVars)
             condRv=self.matchVars(self.outVars, res)
             condPath=self.pathCondition()
             condProg.append(z3.Implies(condPath, condRv))
+            
+        condProg+=self.unknownsCondition()
         return condProg
+
 
