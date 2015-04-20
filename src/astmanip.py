@@ -100,6 +100,8 @@ class SymExecContext:
         self.maxChoice=1<<count
         self.unknown_ints={}
         self.unknown_choices={}
+        self.unknown_choices_vars={}
+        self.trainCnt=0
 
 
     def wrap_condition(self,ref,cond_in,outer):
@@ -129,21 +131,31 @@ class SymExecContext:
         return v
     
     def unknown_choice(self,refNo,*args):
-        if self.unknown_choices.has_key(refNo):
-            return self.unknown_choices[refNo][0]
+        
+        if self.unknown_choices_vars.has_key(refNo):
+            selv=self.unknown_choices_vars[refNo][0]
+        else:
+            sm=0
+            ch=[]
+            selv=[]
+            for i in range(0,len(args)):
+                v=z3.Int('Sel'+str(refNo)+'_'+str(i))
+                selv.append(v)
+                ch.append(z3.Or(v==0,v==1))
+                sm=sm+v
+            ch.append(sm==1)
+            self.unknown_choices_vars[refNo]=(selv,ch)
+
+        
+        vr=z3.Int('Var'+str(refNo)+'_'+str(self.trainCnt))
+        self.trainCnt+=1
         
         ch=[]
-        vr=z3.Int('Var'+str(refNo))
-        sm=0
         for i in range(0,len(args)):
-            ex=args[i]
-            v=z3.Int('Sel'+str(refNo)+'_'+str(i))
-            ch.append(z3.Implies(v==1,vr==ex))
-            ch.append(z3.Or(v==0,v==1))
-            sm=sm+v
+            ch.append(z3.Implies(selv[i]==1,vr==args[i]))
+
         
-        ch.append(sm==1)
-        self.unknown_choices[refNo]=(vr,z3.And(*ch))
+        self.unknown_choices[refNo]=(vr,ch)
         return vr        
     
     def nextPath(self):
@@ -152,7 +164,13 @@ class SymExecContext:
         self.cond={}
         return self.choice<self.maxChoice
 
+    def resetExec(self):
+        self.fullcond={}
+        self.cond={}
+        self.unknown_choices={}
+
     def resetPath(self):
         self.choice=-1
         self.fullcond={}
         self.cond={}
+        self.unknown_choices={}

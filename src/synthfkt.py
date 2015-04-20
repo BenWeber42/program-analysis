@@ -15,20 +15,18 @@ import inspect
 import ast
 from funcanalyzer import *
 
+s2="""
+def f_inv(x,y):
+    if x> unknown_int():
+        return unknown_int(),unknown_int()
+    else:
+        return unknown_int(),unknown_int()
+    return x,p
+"""
+
 s="""
 def f_inv(x,y):
-    t=x+unknown_choice(x,y,0,1)
-    if t> 0:
-        p=1
-        if x>2:
-            x=x+unknown_int()
-        elif x==1:
-            y=y+1
-        else:
-            pass
-    else:
-        p=2
-    return x,p
+    return unknown_choice(x,y,0,1)
 """
 
 # Test Cases: 
@@ -37,16 +35,18 @@ def f_inv(x,y):
 #    Result dep on single in-var --> rest undefined
 #    Div 0
 #    Overflow
+#    Nullstellen von polynomen
+#    hochgrad-polnome -- nicht umformbar?
 
 def main():
     tree=ast.parse(s)
     fa=FuncAnalyzer(tree,'f_inv')
-    conds=fa.calcForward()
+    conds=fa.genTrainer([((0,1),(0)),((0,-5),(0)),((3,-5),(3))])
     solver=z3.Solver()
     #print matchVars(outVars, [1,1])
-    print conds
+    #print conds
     solver.add(*conds)
-    solver.add(fa.matchOut([1,1]))
+    print solver.assertions()
     if(solver.check()):
         print solver.model()
 
