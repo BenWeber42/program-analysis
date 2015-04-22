@@ -4,6 +4,7 @@ from astmanip import *  # # REMOVE
 from unparse import *  # # REMOVE
 from funcanalyzer import *  # # REMOVE
 
+import re
 import ast
 import sys
 from funcanalyzer import FuncAnalyzer
@@ -39,8 +40,57 @@ def solve_app(program, tests):
 			print "Unsat\n"
 
 
+def extractSolution(m):
+	unknown_vars={}
+	unknown_choices={}
+	pat_num=re.compile('^Num(\d+)$')
+	pat_sel=re.compile('^Sel(\d+)_(\d+)$')
+	for v in m.decls():
+		nmatch=pat_num.match(str(v))
+		if nmatch:
+			unknown_vars[int(nmatch.group(1))]=m[v].as_long()
+			continue
+		
+		smatch=pat_sel.match(str(v))
+		if smatch:
+			if m[v].as_long()==0:
+				continue
+			ref=int(smatch.group(1))
+			sel=int(smatch.group(2))
+			
+			unknown_choices[ref]=sel
+			
+	return unknown_vars,unknown_choices
+
 def syn_app(program):
-	raise Exception('Not implemented')
+	tree=ast.parse(program)
+	
+	fa2=FuncAnalyzer(tree,'f')
+	fd=fa2.genInput(1)
+	fd=fa2.genData(fd)
+	
+	fa=FuncAnalyzer(tree,'f_inv')
+	conds=fa.genTrainer(fd)
+	#print conds
+	solver=z3.Solver()
+	
+	g=z3.Goal()
+	g.add(*conds)
+	c2=g.simplify()
+	
+	solver.add(c2)
+
+	print c2
+	if not solver.check():
+		print "Unsat"
+		exit
+	
+	m=solver.model()
+	
+	unknown_vars,unknown_choices=extractSolution(m)
+
+	tr=fa.template(unknown_vars, unknown_choices)
+	Unparser(find_function(tr,'f_inv'))
 
 def find_function(p, function_name):
 	assert(type(p).__name__ == 'Module')

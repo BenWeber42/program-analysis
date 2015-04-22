@@ -59,12 +59,12 @@ class InstrumentingVisitor(ast.NodeTransformer):
             #print ast.dump(node.test)
             t=node.test
             node.test=self.gen_wrap_call(t)
-            node.body.insert(0,ast.Expr(value=self.gen_instr_call("if")))
-            node.body.append(ast.Expr(value=self.gen_instr_call("endif")))
+            #node.body.insert(0,ast.Expr(value=self.gen_instr_call("if")))
+            #node.body.append(ast.Expr(value=self.gen_instr_call("endif")))
             # NOTE: elif are expanded to If(..., orelse=) after AST
-            if node.orelse:
-                node.orelse.insert(0,ast.Expr(value=self.gen_instr_call("else")))
-                node.orelse.append(ast.Expr(value=self.gen_instr_call("endelse")))
+            #if node.orelse:
+            #    node.orelse.insert(0,ast.Expr(value=self.gen_instr_call("else")))
+            #    node.orelse.append(ast.Expr(value=self.gen_instr_call("endelse")))
                 
             self.outer=self.refCnt
             self.refCnt=self.refCnt+1
@@ -75,6 +75,33 @@ class InstrumentingVisitor(ast.NodeTransformer):
             
         self.outer=prevOuter
         return node
+
+
+
+
+
+
+
+class TemplateTransformer(ast.NodeTransformer):
+    def __init__(self,unknown_vars, unknown_choices):
+        self.unknown_vars=unknown_vars
+        self.unknown_choices=unknown_choices
+
+    def visit_Call(self, node):
+        rv=node
+        if node.func.attr=='unknown_int':
+            ref=node.args[0].n
+            val=self.unknown_vars[ref]
+            rv=ast.Num(n=val)
+        elif node.func.attr =='unknown_choice': 
+            ref=node.args[0].n
+            sel=self.unknown_choices[ref]
+            rv=node.args[sel+1]
+        elif node.func.attr =='wrap_condition': 
+            rv=node.args[1]
+
+        return rv
+
 
 
 #
@@ -105,6 +132,8 @@ class SymExecContext:
 
 
     def wrap_condition(self,ref,cond_in,outer):
+        if not z3.is_expr(cond_in):
+            cond_in=bool(cond_in)
         cond=cond_in
         rv=(self.choice>>ref)&1
         if not rv:
