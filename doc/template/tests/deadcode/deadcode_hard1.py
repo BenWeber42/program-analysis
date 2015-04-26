@@ -6,7 +6,7 @@
 def f(a, b, c):
     if a > 0 and b > 0 and c > 0:
         if a*a*a + b*b*b == c*c*c:
-            return a, b, c + 1000
+            return a, b, c + 3000
         return a, b, c
     return a, b, c
 

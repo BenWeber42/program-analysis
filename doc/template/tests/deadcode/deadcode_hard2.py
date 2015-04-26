@@ -1,5 +1,5 @@
 # this example uses a 'fairly' hard diophantin equation
-# it has only solutions for x in [-15, 16] if we assume that x [-1000, 1000]
+# it has only solutions for x in [-15, 16] if we assume that x, y in [-1000, 1000]
 
 
 def f(x, y):
