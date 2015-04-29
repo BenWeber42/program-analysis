@@ -39,7 +39,7 @@ class FuncAnalyzer:
         ast.fix_missing_locations(astTree)
         #unparse.Unparser(astTree)
         comp=compile(astTree, "<no>", "exec")
-        self.context=SymExecContext(vv.refCnt)
+        self.context=SymExecContext(vv.refLength())
         sc={"cond_context":self.context}
         sc2={}
         exec(comp,sc,sc2)
