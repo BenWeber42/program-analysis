@@ -11,12 +11,11 @@
 
 
 import z3
-import inspect
 #import ast
 #import unparse
-import copy
 #from unparse import  * ## REMOVE
 from astmanip import * ## REMOVE
+from astexec import * ## REMOVE
 
 # Test Cases: 
 #    Input unrelate output
@@ -25,41 +24,19 @@ from astmanip import * ## REMOVE
 #    Div 0
 #    Overflow
 
+
+
+
 class FuncAnalyzer:
     def __init__(self,astTree,fname='f'):
-        self.funcName=fname
-        self.tree=copy.deepcopy(astTree)
-        self.oFunc=None
-        
-        self.tree_copy=copy.deepcopy(astTree)
-
-        vv=InstrumentingVisitor()
-        vv.visit(astTree)
-        #print ast.dump(tree.body[0])
-        ast.fix_missing_locations(astTree)
-        #unparse.Unparser(astTree)
-        comp=compile(astTree, "<no>", "exec")
-        self.context=SymExecContext(vv.refLength())
-        sc={"cond_context":self.context}
-        sc2={}
-        exec(comp,sc,sc2)
-        spec=inspect.getargspec(sc2[fname])
-        self.func=sc2[fname]
+        self.func=InstrumentedExecutor(astTree, fname)
+        self.oFunc=FunctionExecutor(astTree, fname)
         
         self.outVars=[]
             
         self.inVars=[]
-        for i in range(0,len(spec.args)):
+        for i in range(0,len(self.func.spec.args)):
             self.inVars.append(z3.Int('In'+str(i)))
-
-    def orig_f(self):
-        if self.oFunc==None:
-            comp=compile(self.tree_copy, "<no>", "exec")
-            sc={}
-            sc2={}
-            exec(comp,sc,sc2)
-            self.oFunc=sc2[self.funcName]
-        return self.oFunc
 
     def template(self,unknown_vars, unknown_choices):
         v2=TemplateTransformer(unknown_vars, unknown_choices)
@@ -68,21 +45,8 @@ class FuncAnalyzer:
         return tr2
 
     def pathCondition(self):
-        if len(self.context.cond.values())==0:
-            return 1==1;
-        return z3.And(*(self.context.cond.values()))
+        return self.context.currentPath().pathCondition()
 
-    def choiceRunConditions(self):
-        con=[]
-        for x in self.context.unknown_choices.values():
-            con+=x[1]
-        return con
-
-    def globalUnknownsCondition(self):
-        con=[]
-        for x in self.context.unknown_choices_vars.values():
-            con+=x[1]
-        return con
 
     def matchVars(self,v,data):
         cond=[]
@@ -98,12 +62,17 @@ class FuncAnalyzer:
         return self.matchVars(self.outVars, data)
 
     def calcForward(self):
-        
+
+        pathLog=PathLog()
         condProg=[]
     
         while self.context.nextPath():
             #print self.func
             res=self.func.__call__(*self.inVars)
+            if not pathLog.addPath(self.context.currentPath()):
+                # We encountered this path already... No need to add
+                continue
+            
             condRv=self.matchOut(res)
             condPath=self.pathCondition()
             condProg.append(z3.Implies(condPath, condRv))
