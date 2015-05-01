@@ -113,13 +113,6 @@ class FuncAnalyzer:
         for i in range(0,len(self.func.spec.args)):
             self.inVars.append(z3.Int('In'+str(i)))
 
-    def template(self,unknown_vars, unknown_choices):
-        v2=TemplateTransformer(unknown_vars, unknown_choices)
-        tr2=copy.deepcopy(self.tree)
-        v2.visit(tr2)
-        return tr2
-
-
     def matchVars(self,v,data):
         """
         Utility function to generate a z3 condition for a list

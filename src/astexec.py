@@ -167,10 +167,10 @@ class InstrumentedExecutor(FunctionExecutor):
 
         self.tree=copy.deepcopy(astTree)
         vv=InstrumentingVisitor()
-        vv.visit(astTree)
+        vv.visit(self.tree)
         
         # Pass the cond_context down to parent class so the instrumented ast tree will compile
-        FunctionExecutor.__init__(self,astTree,fname,{"cond_context":self})
+        FunctionExecutor.__init__(self,self.tree,fname,{"cond_context":self})
         
         # choice is the bit pattern for the current branching path (ref id in wrap_call corresponds to bit number)
         #   Start with recognizable value --> need call to nextPath() to be ready for func calls
@@ -220,74 +220,3 @@ class InstrumentedExecutor(FunctionExecutor):
     def resetPath(self):
         self.choice=-1
 
-class UnknownChoiceDesc():
-    def __init__(self,refNo,choiceCnt):
-        self.ref=refNo
-        self.selection_vars=[]
-        self._selection_conds=[]
-        self._selection_instance_conds=[]
-        self._instance_vars=[]
-        sm=0
-        for i in range(0,choiceCnt):
-            v=z3.Int('Sel'+str(refNo)+'_'+str(i))
-            self.selection_vars.append(v)
-            self._selection_conds.append(z3.Or(v==0,v==1))
-            sm=sm+v
-            self._selection_conds.append(sm==1)
-
-    def generateNewInstance(self,args):
-        instCount=len(self._instance_vars)
-        vr=z3.Int('Var'+str(self.ref)+'_'+str(instCount))
-        self._instance_vars.append(vr)
-        
-        if len(args) != len(self.selection_vars):
-            raise "arg length does not match prepared selection vars"
-        
-        for i in range(0,len(self.selection_vars)):
-            self.selection_instance_conds.append(z3.Implies(self.selection_vars[i]==1,vr==args[i]))
-            
-        return vr        
-
-    @property
-    def condition(self):
-        """Returns the colllected conditions as list of z3 expression"""
-        conds=self._selection_conds+self._selection_instance_conds
-        return conds
-
-class UnknownHandlingExecutor(InstrumentedExecutor):
-    def __init__(self,astTree,fname='f'):    
-        InstrumentedExecutor.__init__(self,astTree,fname)
-
-        self.unknown_ints={}
-        
-        # Map of conditions per ref. Extended by each _choice run
-        self.unknown_choices={}
-        
-        # List of all instance variables returned in _choice
-        self.unknown_choices_vars=[]
-        self.trainCnt=0
-
-    def unknown_int(self,refNo):
-        if self.unknown_ints.has_key(refNo):
-            return self.unknown_ints[refNo]
-        
-        v=z3.Int('Num'+str(refNo))
-        self.unknown_ints[refNo]=v
-        return v
-    
-    def unknown_choice(self,refNo,*args):
-        
-        if self.unknown_choices.has_key(refNo):
-            desc=self.unknown_choices[refNo]
-        else:
-            selv=UnknownChoiceDesc(refNo, len(args))
-            self.unknown_choices[refNo]=desc
-
-        return selv.generateNewInstance(args)
-
-    def choiceConditions(self):
-        """Returns all conditions associated with all executions"""
-        con=[]
-        for x in self.unknown_choices:
-            con+=x.condition()
-        return con
