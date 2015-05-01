@@ -26,8 +26,83 @@ from astexec import * ## REMOVE
 
 
 
+class ResultIteratingSolver:
+    """
+    Wrapper around z3 solver that allows trying additional conditions. z3 solver backtracking undoes the condition
+    on failure.
+    The class furthermore keeps track of all found results and excludes these from future search by adding a z3 condition    
+    """
+    
+    def __init__(self,vars,baseCond=[]):
+        """
+         vars: list of z3 variables/expressions
+         baseCond: base conditions always present
+        """
+        self.solver=z3.Solver()
+        self.previousSolutionConds=[]
+        self.baseCond=baseCond
+        self.solver.add(*baseCond)
+        self.vars=vars
+        self.results=[]
+    
+    
+    def reset(self):
+        """Reset conditions, but add base conditions and exclude previous solutions"""
+        self.solver.reset()
+        self.solver.add(*self.baseCond)
+        self.solver.add(*self.previousSolutionConds)
+
+    def add(self,*conds):
+        """normal add for z3.Solver"""
+        self.solver.add(*conds)
+        
+    def genAvoidCondition(self,inData,forVars=None):
+        """
+        Generate condition to avoid results for certain variable dimensions
+         * inData: list, e.g. previous solution
+         * forVars: indices in variable list, rsp. inData.
+        returns condition: inData[i]!=vars[i] (i in forVars) 
+        """
+        if forVars is None:
+            forVars=range(0,len(self.vars))
+        if len(inData)!=len(self.vars):
+            raise "length of data ({0}) and length of input vars ({1}) do not match".format(len(inData),len(self.vars))
+        return z3.And(*[ self.vars[i]!=inData[i] for i in forVars ])
+
+    def findSolutionAvoid(self,inData,forVars=None):
+        """Find solution avoiding results in certain variable dimensions, see genAvoidCondition"""
+        cond=self.genAvoidCondition(inData, forVars)
+        return self.findSolution(cond)
+
+    def findSolution(self,*newConds):
+        """
+        try to find solution. If successful, add exclusion condition, add to result and return data. 
+        Else return None, leave solver in original state
+        """
+        self.solver.push()
+        self.solver.add(*newConds);
+        if not self.solver.check()==z3.sat:
+            # Remove last condition... caued to fail.
+            self.solver.pop()
+            return None
+            # And go for next one
+            #break
+            
+        m=self.solver.model()
+        res=[m[x].as_long() for x in self.vars]
+        self.previousSolutionConds.append(self.genAvoidCondition(res))
+        self.results.append(res)
+        return res
+
+    
+
+
 
 class FuncAnalyzer:
+    """
+    Function analyzer/synthesizer
+    """
+    
     def __init__(self,astTree,fname='f'):
         self.func=InstrumentedExecutor(astTree, fname)
         self.oFunc=FunctionExecutor(astTree, fname)
@@ -44,17 +119,25 @@ class FuncAnalyzer:
         v2.visit(tr2)
         return tr2
 
-    def pathCondition(self):
-        return self.context.currentPath().pathCondition()
-
 
     def matchVars(self,v,data):
+        """
+        Utility function to generate a z3 condition for a list
+         * v: list of z3 variables (or other expressions)
+         * data: list of data items to match with the correpsonding item in v
+        return a z3 condition
+        """
         cond=[]
         for i in range(0,len(v)):
             cond.append(v[i]==data[i])
         return z3.And(*cond)
     
     def matchOut(self,data):
+        """
+        Create a z3 condition to match output variables 
+        """
+        
+        # The number of elements returned may vary. --> increase output variable size on demand
         i=len(self.outVars)
         while i<len(data):
             self.outVars.append(z3.Int('Out'+str(i)))
@@ -62,19 +145,24 @@ class FuncAnalyzer:
         return self.matchVars(self.outVars, data)
 
     def calcForward(self):
+        """
+        Generate z3 conditions between input and output for all branch paths of given func.
+        Uses z3 variables in inVars and outVars.
+        """
 
         pathLog=PathLog()
         condProg=[]
     
-        while self.context.nextPath():
+        self.func.resetPath()
+        while self.func.nextPath():
             #print self.func
-            res=self.func.__call__(*self.inVars)
-            if not pathLog.addPath(self.context.currentPath()):
+            (res,path)=self.func.callExt(*self.inVars)
+            if not pathLog.addPath(path):
                 # We encountered this path already... No need to add
                 continue
             
             condRv=self.matchOut(res)
-            condPath=self.pathCondition()
+            condPath=path.pathCondition
             condProg.append(z3.Implies(condPath, condRv))
             
         return condProg
@@ -99,20 +187,25 @@ class FuncAnalyzer:
             
         condProg+=self.choiceRunConditions()
         condProg+=self.globalUnknownsCondition()
-        return condProg
+        return condProg        
 
     def genInput(self,k):
-
-        funcData=[]
+        """
+        Generate input data for given function based on branching conditions.
+        Find k*(len(inVars)+1) solutions within each branch. Avoids duplicate solutions between branches
+        Branches that show no (or no more) solutions are skipped.
+        """
     
-        solver=z3.Solver()
-        solCond=[]
-        while self.context.nextPath():
-            #print self.func
-            
-            res=self.func.__call__(*self.inVars)
-            condRv=self.matchOut(res)
-            condPath=self.pathCondition()
+        solver=ResultIteratingSolver(self.inVars)
+        
+        pathLog=PathLog()
+        while self.func.nextPath():
+            (res,path)=self.func.callExt(*self.inVars)
+            if not pathLog.addPath(path):
+                continue
+
+            #condRv=self.matchOut(res)
+            condPath=path.pathCondition
             print condPath
             #z3.Implies(condPath, condRv)
 
@@ -121,49 +214,33 @@ class FuncAnalyzer:
                 varHack.append(iv==z3.Int('tmp_'+str(iv)))
                 
             condPath=z3.And(condPath,*varHack)
-                
-            for vin in self.inVars:
+
+            solver.add(condPath)
+            
+            inData=solver.findSolution()
+            if inData is None:
+                # We didn't find any solution
+                continue
+            
+            for i_in in range(0,len(self.inVars)):
                 solver.reset()
                 solver.add(condPath)
-                solver.add(*solCond)
+                
                 i=0
-                while(solver.check() and i<k*len(self.inVars)):
-                    m=solver.model()
-                    #print m
-                    funcData.append([m[x].as_long() for x in self.inVars])
-                    solver.add(vin!=m[vin]);
-                    if not solver.check():
-                        # Remove last condition... caued to fail.
-                        solver.assertions().pop()
-                        # And go for next one
+                while(i<k*len(self.inVars)):
+                    # First only exclude one dimension, run through all dimensions
+                    inData=solver.findSolutionAvoid(inData, [i_in])
+                    if inData is None:
                         break
-                    solCond.append(z3.And(*[ x!=m[x] for x in self.inVars ]))
                     i+=1
 
-                # Now again, across all vars
-                while(solver.check() and i<k*len(self.inVars)):
-                    m=solver.model()
-                    #print m
-                    funcData.append([m[x] for x in self.inVars])
-                    cc=z3.And(*[ x!=m[x] for x in self.inVars ])
-                    solver.add(cc);
-                    if not solver.check():
-                        # Remove last condition... caued to fail.
-                        solver.assertions().pop()
-                        # And go for next one
-                        break
-                    solCond.append(cc)
-                    i+=1
+            # Now again, across all vars, find whatever other solutions
+            while(i<k*len(self.inVars)):
+                inData=solver.findSolution(inData)
+                if inData is None:
+                    break
+                i+=1
             
 
-        return funcData
+        return solver.results
     
-    def genData(self,inData):
-        outData=[]
-        f=self.orig_f()
-        for dt in inData:
-            res=f.__call__(*(dt))
-            res=list(res)
-            outData.append([dt,res])
-
-        return outData
