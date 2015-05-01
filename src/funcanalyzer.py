@@ -149,7 +149,7 @@ class FuncAnalyzer:
         self.func.resetPath()
         while self.func.nextPath():
             #print self.func
-            (res,path)=self.func.callExt(*self.inVars)
+            (res,path,extraCond)=self.func.callExt(*self.inVars)
             if not pathLog.addPath(path):
                 # We encountered this path already... No need to add
                 continue
@@ -157,6 +157,7 @@ class FuncAnalyzer:
             condRv=self.matchOut(res)
             condPath=path.pathCondition
             condProg.append(z3.Implies(condPath, condRv))
+            condProg.append(z3.Implies(condPath, z3.And(*extraCond)))
             
         return condProg
 
@@ -193,13 +194,14 @@ class FuncAnalyzer:
         
         pathLog=PathLog()
         while self.func.nextPath():
-            (res,path)=self.func.callExt(*self.inVars)
+            solver.reset()
+            (res,path,extraCond)=self.func.callExt(*self.inVars)
             if not pathLog.addPath(path):
                 continue
 
             #condRv=self.matchOut(res)
             condPath=path.pathCondition
-            print condPath
+            #print condPath
             #z3.Implies(condPath, condRv)
 
             varHack=[]
@@ -209,6 +211,7 @@ class FuncAnalyzer:
             condPath=z3.And(condPath,*varHack)
 
             solver.add(condPath)
+            solver.add(extraCond)
             
             inData=solver.findSolution()
             if inData is None:

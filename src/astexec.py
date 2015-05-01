@@ -114,6 +114,7 @@ class FunctionExecutor:
         """
         self.funcName=fname
         self.globalVars=global_vars
+        self.tree=astTree
         
         #print ast.dump(tree.body[0])
         ast.fix_missing_locations(astTree)
@@ -167,6 +168,7 @@ class InstrumentedExecutor(FunctionExecutor):
 
         self.tree=copy.deepcopy(astTree)
         vv=InstrumentingVisitor()
+        self.visitor=vv
         vv.visit(self.tree)
         
         # Pass the cond_context down to parent class so the instrumented ast tree will compile
@@ -180,6 +182,7 @@ class InstrumentedExecutor(FunctionExecutor):
         self.maxChoice=1<<vv.refLength
         # Only enable during call()
         self._currentPath=None
+        self._extraCond=None
 
     def call(self,*args):
         """Executes a function with instrumentation, witout keeping the path setting. Only returns the result of the func"""
@@ -195,10 +198,13 @@ class InstrumentedExecutor(FunctionExecutor):
         if(self.choice==-1):
             raise "can only call after first use of nextPath()"
         self._currentPath=ExecutionPath()
+        self._extraCond=[]
         res=FunctionExecutor.call(self,*args)
         pth=self._currentPath
+        extraCond=self._extraCond
         self._currentPath=None
-        return (res,pth)
+        self._extraCond=None
+        return (res,pth,extraCond)
 
     def wrap_condition(self,ref,cond_in,outer):
         """Called from within the instrumented code, at each if condition"""
@@ -206,6 +212,13 @@ class InstrumentedExecutor(FunctionExecutor):
         self._currentPath.addBranch(ref, rv, cond_in)
         
         return rv;
+    
+    def nonZero(self,e):
+        if(z3.is_expr(e)):
+            self._extraCond.append(e!=0)
+        elif e==0:
+            self._extraCond.append(False)
+        return e
     
     def nextPath(self):
         """

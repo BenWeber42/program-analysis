@@ -11,6 +11,8 @@ from funcanalyzer import FuncAnalyzer
 from funcsynth import FuncSynthesizer
 # import z3
 
+WITH_HYPO=True
+
 def solve_app(program, tests):
 	p = ast.parse(program)
 	# print(ast.dump(p))
@@ -46,19 +48,26 @@ def syn_app(program):
 	
 	funcAnalyzer=FuncAnalyzer(tree,'f')
 	origfunc=FunctionExecutor(tree,'f')
-	trainingData=funcAnalyzer.genInput(1)
+	trainingData=funcAnalyzer.genInput(2)
 	trainingData=origfunc.genData(trainingData)
 	funcSynth=FuncSynthesizer(tree,'f_inv')
 	trainingData=funcSynth.reverseData(trainingData)
 	print trainingData
 	
-	unknown_vars,unknown_choices=funcSynth.solveUnknowns(trainingData)
-	if unknown_vars is None:
-		print "Unsat"
-		return 1
+	if WITH_HYPO:
+		hypos=funcSynth.genHypotheses()
+		solutions=funcSynth.solveHypos(trainingData, hypos)
+		funcs=funcSynth.templateHypos(hypos, solutions)
+		Unparser(find_function(funcs[0].tree,'f_inv'))
 	
-	tr=funcSynth.template(unknown_vars, unknown_choices)
-	Unparser(find_function(tr,'f_inv'))
+	else:
+		unknown_vars,unknown_choices=funcSynth.solveUnknowns(trainingData)
+		if unknown_vars is None:
+			print "Unsat"
+			return 1
+		
+		tr=funcSynth.template(unknown_vars, unknown_choices)
+		Unparser(find_function(tr,'f_inv'))
 
 def find_function(p, function_name):
 	assert(type(p).__name__ == 'Module')
@@ -69,7 +78,7 @@ def find_function(p, function_name):
 
 def eval_f(f, indata):
 	assert(type(f).__name__ == 'FunctionDef')
-	state = {}
+	current = {}
 	# print(ast.dump(f))
 	eval_f.returned = False
 	eval_f.return_val = []
@@ -81,7 +90,7 @@ def eval_f(f, indata):
 				r.append(run_expr(el))
 			return tuple(r)
 		if type(expr).__name__ == 'Name':
-			return state[expr.id]
+			return current[expr.id]
 		if type(expr).__name__ == 'Num':
 			return expr.n
 		if type(expr).__name__ == 'BinOp':
@@ -155,10 +164,10 @@ def eval_f(f, indata):
 				for el_index in range(len(lhs.elts)):
 					el = lhs.elts[el_index]
 					assert(type(el).__name__ == 'Name')
-					state[el.id] = rhs[el_index]
+					current[el.id] = rhs[el_index]
 				return
 			if type(lhs).__name__ == 'Name':
-				state[lhs.id] = rhs
+				current[lhs.id] = rhs
 				return
 		raise Exception('Unhandled statement: ' + ast.dump(stmt))
 	
@@ -168,14 +177,14 @@ def eval_f(f, indata):
 			if eval_f.returned:
 				return
 	
-	# Set initial state:
+	# Set initial current:
 	assert(len(indata) == len(f.args.args))
 	arg_index = 0
 	for arg in f.args.args:
 		assert(type(arg).__name__ == 'Name')
-		state[arg.id] = indata[arg_index]
+		current[arg.id] = indata[arg_index]
 		arg_index = arg_index + 1
-	# print(state)
+	# print(current)
 	run_body(f.body)
 	assert(eval_f.returned)
 	if type(eval_f.return_val).__name__ == 'tuple':

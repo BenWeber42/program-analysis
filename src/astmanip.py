@@ -60,6 +60,7 @@ class InstrumentingVisitor(ast.NodeTransformer):
         self.refCntUnknowns=0
         self.outer=-1
         self._unknowns={}
+        self.unknown_choice_max={}
 
     ctx_var=ast.Name(id='cond_context',ctx=ast.Load())
     
@@ -86,17 +87,23 @@ class InstrumentingVisitor(ast.NodeTransformer):
         #print ast.dump(node)
         # keep track of nested IFs
         prevOuter=self.outer
-        
-        if node.__class__.__name__ == 'Call' and node.func.__class__.__name__ == 'Name':
+
+        if node.__class__.__name__ == 'BinOp' and node.op.__class__.__name__ == "Div":
+            if node.right.func.__class__.__name__ != 'Attribute' or node.right.func.attr != 'nonZero':
+                fname=ast.Attribute(value=InstrumentingVisitor.ctx_var,attr="nonZero",ctx=ast.Load())
+                node.right=ast.Call(func=fname,args=[node.right],keywords=[])
+        elif node.__class__.__name__ == 'Call' and node.func.__class__.__name__ == 'Name':
             if node.func.id=='unknown_int':
                 node.func=ast.Attribute(value=InstrumentingVisitor.ctx_var,attr="unknown_int",ctx=ast.Load())
                 node.args.insert(0,ast.Num(n=self.refCntUnknowns))
                 self._unknowns[self.refCntUnknowns]=node
                 self.refCntUnknowns+=1
-            elif node.func.id=='unknown_choice': 
+            elif node.func.id=='unknown_choice':
                 node.func=ast.Attribute(value=InstrumentingVisitor.ctx_var,attr="unknown_choice",ctx=ast.Load())
+                maxch=len(node.args)
                 node.args.insert(0,ast.Num(n=self.refCntUnknowns))
                 self._unknowns[self.refCntUnknowns]=node
+                self.unknown_choice_max[self.refCntUnknowns]=maxch
                 self.refCntUnknowns+=1
         elif node.__class__.__name__ == 'If' :
             #print ast.dump(node.test)
@@ -137,16 +144,24 @@ class TemplateTransformer(ast.NodeTransformer):
         called from generic_visitor during visit for all calls. only reacts on unknown_... methods
         """
         rv=node
-        if node.func.attr=='unknown_int':
+        if self.unknown_vars is not None and node.func.attr=='unknown_int':
             ref=node.args[0].n
+            if not self.unknown_vars.has_key(ref):
+                raise Exception("trying to replace unknown_int with ref {0}. Solution not supplied: {1}".format(ref,self.unknown_vars))
             val=self.unknown_vars[ref]
             rv=ast.Num(n=val)
-        elif node.func.attr =='unknown_choice': 
+        elif self.unknown_choices is not None and node.func.attr =='unknown_choice': 
             ref=node.args[0].n
+            if not self.unknown_choices.has_key(ref):
+                raise "trying to replace unknown_choice with ref {0}. Solution not supplied".format(ref)
             sel=self.unknown_choices[ref]
             rv=node.args[sel+1]
         elif node.func.attr =='wrap_condition': 
+            self.generic_visit(node)
             rv=node.args[1]
+        elif node.func.attr =='nonZero': 
+            self.generic_visit(node)
+            rv=node.args[0]
 
         return rv
 

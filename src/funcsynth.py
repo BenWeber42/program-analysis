@@ -45,6 +45,10 @@ class UnknownChoiceDesc():
             sm=sm+v
             self._selection_conds.append(sm==1)
 
+    @property
+    def noChoices(self):
+        return len(self.selection_vars);
+    
     def generateNewInstance(self,args):
         """Generate new variable and conditions associated with the variable"""
         instCount=len(self._instance_vars)
@@ -55,7 +59,7 @@ class UnknownChoiceDesc():
             raise "arg length does not match prepared selection vars"
         
         for i in range(0,len(self.selection_vars)):
-            self._selection_instance_conds.append(z3.Implies(self.selection_vars[i]==1,vr==args[i]))
+            self._selection_instance_conds.append(z3.Or(self.selection_vars[i]==0,vr==args[i]))
             
         return vr        
 
@@ -88,6 +92,10 @@ class UnknownHandlingExecutor(InstrumentedExecutor):
         self.unknown_ints[refNo]=v
         return v
     
+    @property
+    def choiceMaxStates(self):
+        return self.visitor.unknown_choice_max
+    
     def unknown_choice(self,refNo,*args):
         """generates conditions for choice and returns new var. See UnknownChoiceDesc for details"""
         if self.unknown_choices.has_key(refNo):
@@ -104,6 +112,36 @@ class UnknownHandlingExecutor(InstrumentedExecutor):
         for x in self.unknown_choices.values():
             con+=x.condition
         return con
+
+class ChoiceState:
+    def __init__(self,maxStates):
+        self._state={}
+        self._order=[]
+        self._max=maxStates
+        for id in maxStates:
+            self._state[id]=0
+            self._order.append(id)
+        self._initial=True
+            
+    @property
+    def current(self):
+        return self._state
+    
+    def __iter__(self):
+        return self
+    
+    def next(self):
+        if self._initial:
+            self._initial=False
+            return self._state
+        
+        for id in self._order:
+            self._state[id]+=1
+            if self._state[id]==self._max[id]:
+                self._state[id]=0
+            else:
+                return self._state.copy()
+        raise StopIteration
 
 
 class FuncSynthesizer:
@@ -126,18 +164,20 @@ class FuncSynthesizer:
             res.append([t[1],t[0]])
         return res;
     
-    def genConditionsFrom(self,data):
+    def genConditionsFrom(self,data,func=None):
         """
         Generate conditions from supplied data. Data has same format as return value of FunctionExecutor.genData
         NOTE: for training the inverse fkt, use reverseData() first to swap input/outpu of the training data
         """
         condProg=[]
+        if func is None:
+            func=self.func
     
         for t in data:
-            self.func.resetPath()
+            func.resetPath()
             pathLog=PathLog()
-            while self.func.nextPath():
-                (res,path)=self.func.callExt(*(t[0]))
+            while func.nextPath():
+                (res,path,extraCond)=func.callExt(*(t[0]))
                 if not pathLog.addPath(path):
                     continue
                 
@@ -148,9 +188,15 @@ class FuncSynthesizer:
                 else:
                     condRv.append(res==t[1][0])
                 condPath=path.pathCondition
-                condProg.append(z3.Implies(condPath, z3.And(*condRv)))
+                if z3.is_expr(condPath):                    
+                    condProg.append(z3.Implies(condPath, z3.And(*condRv)))
+                    condProg.append(z3.Implies(condPath, z3.And(*extraCond)))
+                elif condPath:
+                    condProg.append(z3.And(*condRv))
+                    condProg.append(z3.And(*extraCond))
+                    
             
-        condProg+=self.func.choiceConditions()
+        condProg+=func.choiceConditions()
         return condProg        
     
     def extractSolution(self,model):
@@ -178,26 +224,58 @@ class FuncSynthesizer:
                 
         return unknown_vars,unknown_choices
 
-    def solveUnknowns(self,fd):
-        conds=self.genConditionsFrom(fd)
+    def solveUnknowns(self,fd,func=None):
+        conds=self.genConditionsFrom(fd,func)
         #print conds
         solver=z3.Solver()
         
         g=z3.Goal()
         g.add(*conds)
-        c2=g.simplify()
-        
-        solver.add(c2)
+        #c2=g.simplify()        
+        #solver.add(c2)
+        solver.add(g)
     
-        print c2
+        #print c2
         if not solver.check() == z3.sat:
             return (None,None)
         
         m=solver.model()
         return self.extractSolution(m)
         
-    def template(self,unknown_vars, unknown_choices):
+    def template(self,unknown_vars, unknown_choices,func=None):
+        if func is None:
+            func=self.func
         v2=TemplateTransformer(unknown_vars, unknown_choices)
-        tr2=copy.deepcopy(self.func.tree)
+        tr2=copy.deepcopy(func.tree)
         v2.visit(tr2)
         return tr2
+
+    def genHypoFkt(self,choiceState):
+        tree=self.template(None, choiceState)
+        ff=UnknownHandlingExecutor(tree, self.func.funcName)
+        return ff;
+            
+    def genHypotheses(self):
+        hypo=[]
+
+        choiceState=ChoiceState(self.func.choiceMaxStates)
+        for st in choiceState:
+            hypo.append(self.genHypoFkt(st))
+
+        return hypo
+    
+    def solveHypos(self,fd,hypos):
+        solution=[]
+        for hypo in hypos:
+            ukv,ukc=self.solveUnknowns(fd, hypo)
+            solution.append(ukv)
+        return solution
+    
+    def templateHypos(self,hypos,sols):
+        rv=[]
+        for i,sol in enumerate(sols):
+            if sol is None:
+                continue
+            rv.append(FunctionExecutor( self.template(sol, None,hypos[i]),'f_inv'))
+        return rv
+    
