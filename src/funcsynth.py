@@ -43,7 +43,7 @@ class UnknownChoiceDesc():
             self.selection_vars.append(v)
             self._selection_conds.append(z3.Or(v==0,v==1))
             sm=sm+v
-            self._selection_conds.append(sm==1)
+        self._selection_conds.append(sm==1)
 
     @property
     def noChoices(self):
@@ -269,6 +269,7 @@ class FuncSynthesizer:
         for hypo in hypos:
             ukv,ukc=self.solveUnknowns(fd, hypo)
             solution.append(ukv)
+        # TODO: Run through every k-th sample in first round to eliminate Unsat cases
         return solution
     
     def templateHypos(self,hypos,sols):
