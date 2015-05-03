@@ -263,14 +263,33 @@ class FuncSynthesizer:
             hypo.append(self.genHypoFkt(st))
 
         return hypo
-    
-    def solveHypos(self,fd,hypos):
+
+
+    def filterHypos(self,fd,hypos,k=1):
+        outHypo=[]
         solution=[]
+        i=0
+        fd2=[]
+        while i<len(hypos):
+            fd2.append(fd[i])
+            i+=k
+        
         for hypo in hypos:
             ukv,ukc=self.solveUnknowns(fd, hypo)
-            solution.append(ukv)
-        # TODO: Run through every k-th sample in first round to eliminate Unsat cases
-        return solution
+            if(ukv is not None):
+                solution.append(ukv)
+                outHypo.append(hypo)
+        return (outHypo,solution)
+    
+    def solveHypos(self,fd,hypos,k=5):
+        validHypos=hypos
+        i=k
+        while(i>0):
+            if len(validHypos)==0:
+                return ([],[])
+            (validHypos,solutions)=self.filterHypos(fd, validHypos, i)
+            i=i>>1
+        return (validHypos,solutions)
     
     def templateHypos(self,hypos,sols):
         rv=[]

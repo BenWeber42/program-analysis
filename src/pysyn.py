@@ -7,15 +7,17 @@ from funcanalyzer import *  # # REMOVE
 import re
 import ast
 import sys
+import logging
 from funcanalyzer import FuncAnalyzer
 from funcsynth import FuncSynthesizer
 # import z3
 
 WITH_HYPO=True
+logging.basicConfig(level=logging.WARN)
 
 def solve_app(program, tests):
 	p = ast.parse(program)
-	# print(ast.dump(p))
+	logging.debug("AST Tree of read file:\n"+ast.dump(p))
 	f = find_function(p, 'f')
 	
 	fa=FuncAnalyzer(p)
@@ -28,14 +30,13 @@ def solve_app(program, tests):
 			continue		
 		outdata = [ int(x) for x in test.split(' ') ]
 		solver.reset()
-		#print matchVars(outVars, [1,1])
 		solver.add(*conds)
 		solver.add(fa.matchOut(outdata))
-		
-		#print solver.assertions()
+
+		logging.info("Conditions for Solver:\n"+str(solver.assertions()))
 		if(solver.check()==z3.sat):
 			m=solver.model()
-			#print m
+			logging.info("Model :\n"+str(m))
 			#varNames=[str(x) for x in fa.inVars]
 			vals=[m[x] for x in fa.inVars]
 			print(' '.join([ str(x) for x in vals]))
@@ -48,16 +49,23 @@ def syn_app(program):
 	
 	funcAnalyzer=FuncAnalyzer(tree,'f')
 	origfunc=FunctionExecutor(tree,'f')
-	trainingData=funcAnalyzer.genInput(2)
+	setMulti=32
+	if WITH_HYPO:
+		setMulti=16
+	trainingData=funcAnalyzer.genInput(setMulti)
 	trainingData=origfunc.genData(trainingData)
 	funcSynth=FuncSynthesizer(tree,'f_inv')
 	trainingData=funcSynth.reverseData(trainingData)
-	print trainingData
+	#print trainingData
 	
 	if WITH_HYPO:
 		hypos=funcSynth.genHypotheses()
-		solutions=funcSynth.solveHypos(trainingData, hypos)
+		(hypos,solutions)=funcSynth.solveHypos(trainingData, hypos,16)
 		funcs=funcSynth.templateHypos(hypos, solutions)
+		if(len(funcs)==0):
+			print "Unsat"
+			return 1
+		
 		Unparser(find_function(funcs[0].tree,'f_inv'))
 	
 	else:
