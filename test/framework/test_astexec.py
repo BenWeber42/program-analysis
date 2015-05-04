@@ -8,6 +8,7 @@ import astexec
 import ast
 
 
+# TODO: testcase is failing... why?
 class TestExecPath(unittest.TestCase):
     
     def testAdd(self):
