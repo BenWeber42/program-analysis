@@ -12,19 +12,19 @@ from funcanalyzer import FuncAnalyzer
 from funcsynth import FuncSynthesizer
 # import z3
 
-WITH_HYPO=True
-logging.basicConfig(level=logging.WARN)
+WITH_HYPO = True
+logging.basicConfig(level = logging.WARN)
 
 def solve_app(program, tests):
 	p = ast.parse(program)
 	logging.debug("AST Tree of read file:\n"+ast.dump(p))
 	f = find_function(p, 'f')
 	
-	fa=FuncAnalyzer(p)
+	fa = FuncAnalyzer(p)
 	
 	
-	solver=z3.Solver()
-	conds=fa.calcForward()
+	solver = z3.Solver()
+	conds = fa.calcForward()
 	for test in tests.split('\n'):
 		if len(test) == 0:
 			continue		
@@ -34,48 +34,48 @@ def solve_app(program, tests):
 		solver.add(fa.matchOut(outdata))
 
 		logging.info("Conditions for Solver:\n"+str(solver.assertions()))
-		if(solver.check()==z3.sat):
-			m=solver.model()
+		if(solver.check() == z3.sat):
+			m = solver.model()
 			logging.info("Model :\n"+str(m))
-			#varNames=[str(x) for x in fa.inVars]
-			vals=[m[x] for x in fa.inVars]
+			#varNames = [str(x) for x in fa.inVars]
+			vals = [m[x] for x in fa.inVars]
 			print(' '.join([ str(x) for x in vals]))
 		else:
 			print "Unsat\n"
 
 
 def syn_app(program):
-	tree=ast.parse(program)
+	tree = ast.parse(program)
 	
-	funcAnalyzer=FuncAnalyzer(tree,'f')
-	origfunc=FunctionExecutor(tree,'f')
-	setMulti=32
+	funcAnalyzer = FuncAnalyzer(tree, 'f')
+	origfunc = FunctionExecutor(tree, 'f')
+	setMulti = 32
 	if WITH_HYPO:
-		setMulti=16
-	trainingData=funcAnalyzer.genInput(setMulti)
-	trainingData=origfunc.genData(trainingData)
-	funcSynth=FuncSynthesizer(tree,'f_inv')
-	trainingData=funcSynth.reverseData(trainingData)
+		setMulti = 16
+	trainingData = funcAnalyzer.genInput(setMulti)
+	trainingData = origfunc.genData(trainingData)
+	funcSynth = FuncSynthesizer(tree, 'f_inv')
+	trainingData = funcSynth.reverseData(trainingData)
 	#print trainingData
 	
 	if WITH_HYPO:
-		hypos=funcSynth.genHypotheses()
-		(hypos,solutions)=funcSynth.solveHypos(trainingData, hypos,16)
-		funcs=funcSynth.templateHypos(hypos, solutions)
-		if(len(funcs)==0):
+		hypos = funcSynth.genHypotheses()
+		(hypos, solutions) = funcSynth.solveHypos(trainingData, hypos, 16)
+		funcs = funcSynth.templateHypos(hypos, solutions)
+		if(len(funcs) == 0):
 			print "Unsat"
 			return 1
 		
-		Unparser(find_function(funcs[0].tree,'f_inv'))
+		Unparser(find_function(funcs[0].tree, 'f_inv'))
 	
 	else:
-		unknown_vars,unknown_choices=funcSynth.solveUnknowns(trainingData)
+		unknown_vars, unknown_choices = funcSynth.solveUnknowns(trainingData)
 		if unknown_vars is None:
 			print "Unsat"
 			return 1
 		
-		tr=funcSynth.template(unknown_vars, unknown_choices)
-		Unparser(find_function(tr,'f_inv'))
+		tr = funcSynth.template(unknown_vars, unknown_choices)
+		Unparser(find_function(tr, 'f_inv'))
 
 def find_function(p, function_name):
 	assert(type(p).__name__ == 'Module')
@@ -116,7 +116,7 @@ def eval_f(f, indata):
 			if type(expr.op).__name__ == 'USub':
 				return -run_expr(expr.operand)
 		if type(expr).__name__ == 'Compare':
-			assert(len(expr.ops) == 1)  # Do not allow for x==y==0 syntax
+			assert(len(expr.ops) == 1)  # Do not allow for x == y == 0 syntax
 			assert(len(expr.comparators) == 1)
 			e1 = run_expr(expr.left)
 			op = expr.ops[0]
@@ -163,7 +163,7 @@ def eval_f(f, indata):
 				run_body(stmt.orelse)
 			return
 		if type(stmt).__name__ == 'Assign':
-			assert(len(stmt.targets) == 1)  # Disallow a=b=c syntax
+			assert(len(stmt.targets) == 1)  # Disallow a = b = c syntax
 			lhs = stmt.targets[0]
 			rhs = run_expr(stmt.value)
 			if type(lhs).__name__ == 'Tuple':

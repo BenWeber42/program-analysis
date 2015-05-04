@@ -26,7 +26,7 @@ class Unparser:
     is disregarded. """
 
     def __init__(self, tree, file = sys.stdout):
-        """Unparser(tree, file=sys.stdout) -> None.
+        """Unparser(tree, file = sys.stdout) -> None.
          Print the source for tree to file."""
         self.f = file
         self.future_imports = []
@@ -152,7 +152,7 @@ class Unparser:
             do_comma = True
         for e in t.values:
             if do_comma:self.write(", ")
-            else:do_comma=True
+            else:do_comma = True
             self.dispatch(e)
         if not t.nl:
             self.write(",")
@@ -411,7 +411,7 @@ class Unparser:
     def _Tuple(self, t):
         self.write("(")
         if len(t.elts) == 1:
-            (elt,) = t.elts
+            (elt, ) = t.elts
             self.dispatch(elt)
             self.write(",")
         else:
@@ -463,7 +463,7 @@ class Unparser:
         interleave(lambda: self.write(s), self.dispatch, t.values)
         self.write(")")
 
-    def _Attribute(self,t):
+    def _Attribute(self, t):
         self.dispatch(t.value)
         # Special case: 3.__abs__() is a syntax error, so if t.value
         # is an integer literal then we need to either parenthesize
@@ -528,7 +528,7 @@ class Unparser:
         first = True
         # normal arguments
         defaults = [None] * (len(t.args) - len(t.defaults)) + t.defaults
-        for a,d in zip(t.args, defaults):
+        for a, d in zip(t.args, defaults):
             if first:first = False
             else: self.write(", ")
             self.dispatch(a),
