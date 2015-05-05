@@ -12,5 +12,5 @@ def f(x):
 def f_inv(y):
     if y == 10000:
         return unknown_choice(0, y) # should be 0
-    else
+    else:
         return y - unknown_int() # should be 1

@@ -1,20 +1,19 @@
 #!/usr/bin/env python
-
+    
 import ast
 import copy
 import inspect
 import logging
-import os
 import re
 import sys
 import z3
-
-
+    
+    
 class ExecutionPath:
     """
     Represents the conditions for one execution path.
     """
-    
+        
     def __init__(self):
         # List of conditions, each representing one branch decision
         self.cond = []
@@ -24,7 +23,7 @@ class ExecutionPath:
         #   To remember which branches we actually encountered, set corresponding bit
         #   --> Allows later on to sort out duplicate path settings (i.e. with bits set that were not encountered in exec
         self.maskBits = 0
-    
+        
     def addBranch(self, ref, selection, cond_in):
         """
         Adds a branch decision made at an if statement
@@ -849,799 +848,366 @@ logging.basicConfig(level = logging.WARN)
 
 
 def solve_app(program, tests):
-	p = ast.parse(program)
-	logging.debug("AST Tree of read file:\n"+ast.dump(p))
-	f = find_function(p, 'f')
-	
-	fa = FuncAnalyzer(p)
-	
-	
-	solver = z3.Solver()
-	conds = fa.calcForward()
-	for test in tests.split('\n'):
-		if len(test) == 0:
-			continue		
-		outdata = [ int(x) for x in test.split(' ') ]
-		solver.reset()
-		solver.add(*conds)
-		solver.add(fa.matchOut(outdata))
+    p = ast.parse(program)
+    logging.debug("AST Tree of read file:\n"+ast.dump(p))
+    f = find_function(p, 'f')
+    
+    fa = FuncAnalyzer(p)
+    
+    
+    solver = z3.Solver()
+    conds = fa.calcForward()
+    for test in tests.split('\n'):
+        if len(test) == 0:
+            continue        
+        outdata = [ int(x) for x in test.split(' ') ]
+        solver.reset()
+        solver.add(*conds)
+        solver.add(fa.matchOut(outdata))
 
-		logging.info("Conditions for Solver:\n"+str(solver.assertions()))
-		if(solver.check() == z3.sat):
-			m = solver.model()
-			logging.info("Model :\n"+str(m))
-			#varNames = [str(x) for x in fa.inVars]
-			vals = [m[x] for x in fa.inVars]
-			print(' '.join([ str(x) for x in vals]))
-		else:
-			print "Unsat\n"
+        logging.info("Conditions for Solver:\n"+str(solver.assertions()))
+        if(solver.check() == z3.sat):
+            m = solver.model()
+            logging.info("Model :\n"+str(m))
+            #varNames = [str(x) for x in fa.inVars]
+            vals = [m[x] for x in fa.inVars]
+            print(' '.join([ str(x) for x in vals]))
+        else:
+            print "Unsat\n"
 
 
 def syn_app(program):
-	tree = ast.parse(program)
-	
-	funcAnalyzer = FuncAnalyzer(tree, 'f')
-	origfunc = FunctionExecutor(tree, 'f')
-	setMulti = 32
-	if WITH_HYPO:
-		setMulti = 16
-	trainingData = funcAnalyzer.genInput(setMulti)
-	trainingData = origfunc.genData(trainingData)
-	funcSynth = FuncSynthesizer(tree, 'f_inv')
-	trainingData = funcSynth.reverseData(trainingData)
-	#print trainingData
-	
-	if WITH_HYPO:
-		hypos = funcSynth.genHypotheses()
-		(hypos, solutions) = funcSynth.solveHypos(trainingData, hypos, 16)
-		funcs = funcSynth.templateHypos(hypos, solutions)
-		if(len(funcs) == 0):
-			print "Unsat"
-			return 1
-		
-		Unparser(find_function(funcs[0].tree, 'f_inv'))
-	
-	else:
-		unknown_vars, unknown_choices = funcSynth.solveUnknowns(trainingData)
-		if unknown_vars is None:
-			print "Unsat"
-			return 1
-		
-		tr = funcSynth.template(unknown_vars, unknown_choices)
-		Unparser(find_function(tr, 'f_inv'))
+    tree = ast.parse(program)
+    
+    funcAnalyzer = FuncAnalyzer(tree, 'f')
+    origfunc = FunctionExecutor(tree, 'f')
+    setMulti = 32
+    if WITH_HYPO:
+        setMulti = 16
+    trainingData = funcAnalyzer.genInput(setMulti)
+    trainingData = origfunc.genData(trainingData)
+    funcSynth = FuncSynthesizer(tree, 'f_inv')
+    trainingData = funcSynth.reverseData(trainingData)
+    #print trainingData
+    
+    if WITH_HYPO:
+        hypos = funcSynth.genHypotheses()
+        (hypos, solutions) = funcSynth.solveHypos(trainingData, hypos, 16)
+        funcs = funcSynth.templateHypos(hypos, solutions)
+        if(len(funcs) == 0):
+            print "Unsat"
+            return 1
+        
+        print ast_to_source(find_function(funcs[0].tree, 'f_inv'))
+    
+    else:
+        unknown_vars, unknown_choices = funcSynth.solveUnknowns(trainingData)
+        if unknown_vars is None:
+            print "Unsat"
+            return 1
+        
+        tr = funcSynth.template(unknown_vars, unknown_choices)
+        print ast_to_source(find_function(tr, 'f_inv'))
 
 
 def find_function(p, function_name):
-	assert(type(p).__name__ == 'Module')
-	for x in p.body:
-		if type(x).__name__ == 'FunctionDef' and x.name == function_name:
-			return x;
-	raise Exception('Function %s not found' % (function_name))
+    assert(type(p).__name__ == 'Module')
+    for x in p.body:
+        if type(x).__name__ == 'FunctionDef' and x.name == function_name:
+            return x;
+    raise Exception('Function %s not found' % (function_name))
+
+
+def ast_to_source(ast, warn_unknown = True):
+    return AstPrinter(ast, warn_unknown).get_source()
+
+class AstPrinter:
+    """
+    Converts an ast node of a function to its textual representation (its source)
+    
+    If unknown_int() or unknown_choice(...) are encountered it'll print a warning
+    if warn_unknown = True (default)
+    """
+    
+    def __init__(self, f, warn_unknown = True):
+        assert(type(f).__name__ == "FunctionDef")
+        self.indentation = 0 
+        self.f = f
+    
+    def get_source(self):
+        out = self.f.name + "(" + ", ".join(map(self.expr_to_source, self.f.args.args)) + "):\n"
+        self.indent()
+        out += self.block_to_source(self.f.body)
+        self.detent()
+        return out
+
+    def indent(self):
+        self.indentation += 1
+        
+    def detent(self):
+        self.indentation -= 1
+    
+    def emitln(self, line):
+        return "    " *self.indentation + line + "\n"
+    
+    def block_to_source(self, block):
+        return "".join(map(self.stmt_to_source, block))
+    
+    def stmt_to_source(self, stmt):
+        
+        # TODO: unknowns
+
+        if type(stmt).__name__ == 'Return':
+            return self.emitln("return " + self.expr_to_source(stmt.value))
+
+        if type(stmt).__name__ == 'If':
+
+            out = self.emitln("if (" + self.expr_to_source(stmt.test) + "):")
+
+            self.indent()
+            out += self.block_to_source(stmt.body)
+            self.detent()
+
+            self.emitln("else:")
+
+            self.indent()
+            out += self.block_to_source(stmt.orelse)
+            self.detent()
+
+            return out
+        
+        if type(stmt).__name__ == 'Assign':
+            assert(len(stmt.targets) == 1)  # Disallow a = b = c syntax
+            
+            return self.emitln(self.expr_to_source(stmt.targets[0]) + " = " + self.expr_to_source(stmt.value))
+
+        raise Exception('Unhandled statement: ' + ast.dump(stmt))
+    
+    def expr_to_source(self, expr):
+        
+        # TODO: unknowns
+
+        if type(expr).__name__ == 'Tuple':
+            members = map(lambda expr: self.expr_to_source(expr), expr.elts)
+            return ", ".join(members)
+
+        if type(expr).__name__ == 'Name':
+            return expr.id
+
+        if type(expr).__name__ == 'Num':
+            return str(expr.n)
+
+        if type(expr).__name__ == 'BinOp':
+            out = '(' + self.expr_to_source(expr.left) + ')'
+            
+            if type(expr.op).__name__ == 'Add':
+                out += " + "
+            if type(expr.op).__name__ == 'Sub':
+                out += " - "
+            if type(expr.op).__name__ == 'Mult':
+                out += " * "
+            if type(expr.op).__name__ == 'Div':
+                out += " / "
+
+            out += '('  + self.expr_to_source(expr.right) + ')'
+            return out
+
+        if type(expr).__name__ == 'UnaryOp':
+            if type(expr.op).__name__ == 'Not':
+                out = "not "
+            if type(expr.op).__name__ == 'USub':
+                out = "-"
+            out += "(" + self.expr_to_source(expr.operand) + ")"
+            return out
+
+        if type(expr).__name__ == 'Compare':
+            assert(len(expr.ops) == 1)  # Do not allow for x == y == 0 syntax
+            assert(len(expr.comparators) == 1)
+
+            out = "(" + self.expr_to_source(expr.left) + ")"
+
+            op = expr.ops[0]
+            if type(op).__name__ == 'Eq':
+                out += " == "
+            if type(op).__name__ == 'NotEq':
+                out += " != "
+            if type(op).__name__ == 'Gt':
+                out += " > "
+            if type(op).__name__ == 'GtE':
+                out += " >= "
+            if type(op).__name__ == 'Lt':
+                out += " < "
+            if type(op).__name__ == 'LtE':
+                out += " <= "
+
+            out += "(" + self.expr_to_source(expr.comparators[0]) + ")"
+            return out
+
+        if type(expr).__name__ == 'BoolOp':
+            operands = map(lambda expr: "(" + self.expr_to_source(expr) + ")", expr.values)
+            if type(expr.op).__name__ == 'And':
+                return " and ".join(operands)
+            if type(expr.op).__name__ == 'Or':
+                return " or ".join(operands)
+
+        raise Exception('Unhandled expression: ' + ast.dump(expr))
 
 
 def eval_f(f, indata):
-	assert(type(f).__name__ == 'FunctionDef')
-	current = {}
-	# print(ast.dump(f))
-	eval_f.returned = False
-	eval_f.return_val = []
-	
-	def run_expr(expr):
-		if type(expr).__name__ == 'Tuple':
-			r = []
-			for el in expr.elts:
-				r.append(run_expr(el))
-			return tuple(r)
-		if type(expr).__name__ == 'Name':
-			return current[expr.id]
-		if type(expr).__name__ == 'Num':
-			return expr.n
-		if type(expr).__name__ == 'BinOp':
-			if type(expr.op).__name__ == 'Add':
-				return run_expr(expr.left) + run_expr(expr.right)
-			if type(expr.op).__name__ == 'Sub':
-				return run_expr(expr.left) - run_expr(expr.right)			
-			if type(expr.op).__name__ == 'Mult':
-				return run_expr(expr.left) * run_expr(expr.right)
-			if type(expr.op).__name__ == 'Div':
-				return run_expr(expr.left) / run_expr(expr.right)
-		if type(expr).__name__ == 'UnaryOp':
-			if type(expr.op).__name__ == 'Not':
-				return not run_expr(expr.operand)
-			if type(expr.op).__name__ == 'USub':
-				return -run_expr(expr.operand)
-		if type(expr).__name__ == 'Compare':
-			assert(len(expr.ops) == 1)  # Do not allow for x == y == 0 syntax
-			assert(len(expr.comparators) == 1)
-			e1 = run_expr(expr.left)
-			op = expr.ops[0]
-			e2 = run_expr(expr.comparators[0])
-			if type(op).__name__ == 'Eq':
-				return e1 == e2
-			if type(op).__name__ == 'NotEq':
-				return e1 != e2			
-			if type(op).__name__ == 'Gt':
-				return e1 > e2
-			if type(op).__name__ == 'GtE':
-				return e1 >= e2
-			if type(op).__name__ == 'Lt':
-				return e1 < e2
-			if type(op).__name__ == 'LtE':
-				return e1 <= e2
-		if type(expr).__name__ == 'BoolOp':
-			if type(expr.op).__name__ == 'And':
-				r = True
-				for v in expr.values:
-					r = r and run_expr(v)
-					if not r:
-						break
-				return r
-			if type(expr.op).__name__ == 'Or':
-				r = False
-				for v in expr.values:
-					r = r or run_expr(v)
-					if r:
-						break
-				return r			
-		raise Exception('Unhandled expression: ' + ast.dump(expr))
-	
-	def run_stmt(stmt):
-		if type(stmt).__name__ == 'Return':
-			eval_f.returned = True
-			eval_f.return_val = run_expr(stmt.value)
-			return
-		if type(stmt).__name__ == 'If':
-			cond = run_expr(stmt.test)
-			if cond:
-				run_body(stmt.body)
-			else:
-				run_body(stmt.orelse)
-			return
-		if type(stmt).__name__ == 'Assign':
-			assert(len(stmt.targets) == 1)  # Disallow a = b = c syntax
-			lhs = stmt.targets[0]
-			rhs = run_expr(stmt.value)
-			if type(lhs).__name__ == 'Tuple':
-				assert(type(rhs).__name__ == 'tuple')
-				assert(len(rhs) == len(lhs.elts))
-				for el_index in range(len(lhs.elts)):
-					el = lhs.elts[el_index]
-					assert(type(el).__name__ == 'Name')
-					current[el.id] = rhs[el_index]
-				return
-			if type(lhs).__name__ == 'Name':
-				current[lhs.id] = rhs
-				return
-		raise Exception('Unhandled statement: ' + ast.dump(stmt))
-	
-	def run_body(body):
-		for stmt in body:
-			run_stmt(stmt)
-			if eval_f.returned:
-				return
-	
-	# Set initial current:
-	assert(len(indata) == len(f.args.args))
-	arg_index = 0
-	for arg in f.args.args:
-		assert(type(arg).__name__ == 'Name')
-		current[arg.id] = indata[arg_index]
-		arg_index = arg_index + 1
-	# print(current)
-	run_body(f.body)
-	assert(eval_f.returned)
-	if type(eval_f.return_val).__name__ == 'tuple':
-		return eval_f.return_val
-	return tuple([eval_f.return_val])
+    assert(type(f).__name__ == 'FunctionDef')
+    current = {}
+    # print(ast.dump(f))
+    eval_f.returned = False
+    eval_f.return_val = []
+    
+    def run_expr(expr):
+        if type(expr).__name__ == 'Tuple':
+            r = []
+            for el in expr.elts:
+                r.append(run_expr(el))
+            return tuple(r)
+        if type(expr).__name__ == 'Name':
+            return current[expr.id]
+        if type(expr).__name__ == 'Num':
+            return expr.n
+        if type(expr).__name__ == 'BinOp':
+            if type(expr.op).__name__ == 'Add':
+                return run_expr(expr.left) + run_expr(expr.right)
+            if type(expr.op).__name__ == 'Sub':
+                return run_expr(expr.left) - run_expr(expr.right)            
+            if type(expr.op).__name__ == 'Mult':
+                return run_expr(expr.left) * run_expr(expr.right)
+            if type(expr.op).__name__ == 'Div':
+                return run_expr(expr.left) / run_expr(expr.right)
+        if type(expr).__name__ == 'UnaryOp':
+            if type(expr.op).__name__ == 'Not':
+                return not run_expr(expr.operand)
+            if type(expr.op).__name__ == 'USub':
+                return -run_expr(expr.operand)
+        if type(expr).__name__ == 'Compare':
+            assert(len(expr.ops) == 1)  # Do not allow for x == y == 0 syntax
+            assert(len(expr.comparators) == 1)
+            e1 = run_expr(expr.left)
+            op = expr.ops[0]
+            e2 = run_expr(expr.comparators[0])
+            if type(op).__name__ == 'Eq':
+                return e1 == e2
+            if type(op).__name__ == 'NotEq':
+                return e1 != e2            
+            if type(op).__name__ == 'Gt':
+                return e1 > e2
+            if type(op).__name__ == 'GtE':
+                return e1 >= e2
+            if type(op).__name__ == 'Lt':
+                return e1 < e2
+            if type(op).__name__ == 'LtE':
+                return e1 <= e2
+        if type(expr).__name__ == 'BoolOp':
+            if type(expr.op).__name__ == 'And':
+                r = True
+                for v in expr.values:
+                    r = r and run_expr(v)
+                    if not r:
+                        break
+                return r
+            if type(expr.op).__name__ == 'Or':
+                r = False
+                for v in expr.values:
+                    r = r or run_expr(v)
+                    if r:
+                        break
+                return r            
+        raise Exception('Unhandled expression: ' + ast.dump(expr))
+    
+    def run_stmt(stmt):
+        if type(stmt).__name__ == 'Return':
+            eval_f.returned = True
+            eval_f.return_val = run_expr(stmt.value)
+            return
+        if type(stmt).__name__ == 'If':
+            cond = run_expr(stmt.test)
+            if cond:
+                run_block(stmt.body)
+            else:
+                run_block(stmt.orelse)
+            return
+        if type(stmt).__name__ == 'Assign':
+            assert(len(stmt.targets) == 1)  # Disallow a = b = c syntax
+            lhs = stmt.targets[0]
+            rhs = run_expr(stmt.value)
+            if type(lhs).__name__ == 'Tuple':
+                assert(type(rhs).__name__ == 'tuple')
+                assert(len(rhs) == len(lhs.elts))
+                for el_index in range(len(lhs.elts)):
+                    el = lhs.elts[el_index]
+                    assert(type(el).__name__ == 'Name')
+                    current[el.id] = rhs[el_index]
+                return
+            if type(lhs).__name__ == 'Name':
+                current[lhs.id] = rhs
+                return
+        raise Exception('Unhandled statement: ' + ast.dump(stmt))
+    
+    def run_block(block):
+        for stmt in block:
+            run_stmt(stmt)
+            if eval_f.returned:
+                return
+    
+    # Set initial current:
+    assert(len(indata) == len(f.args.args))
+    arg_index = 0
+    for arg in f.args.args:
+        assert(type(arg).__name__ == 'Name')
+        current[arg.id] = indata[arg_index]
+        arg_index = arg_index + 1
+    # print(current)
+    run_block(f.body)
+    assert(eval_f.returned)
+    if type(eval_f.return_val).__name__ == 'tuple':
+        return eval_f.return_val
+    return tuple([eval_f.return_val])
 
 
 def eval_app(program, tests):
-	p = ast.parse(program)
-	# print(ast.dump(p))
-	f = find_function(p, 'f')
-	for test in tests.split('\n'):
-		if len(test) == 0:
-			continue		
-		indata = [ int(x) for x in test.split(' ') ]
-		print(' '.join([ str(x) for x in eval_f(f, indata) ]))
+    p = ast.parse(program)
+    # print(ast.dump(p))
+    f = find_function(p, 'f')
+    for test in tests.split('\n'):
+        if len(test) == 0:
+            continue        
+        indata = [ int(x) for x in test.split(' ') ]
+        print(' '.join([ str(x) for x in eval_f(f, indata) ]))
 
 
 def read_file_to_string(filename):
-	f = open(filename, 'rt')
-	s = f.read()
-	f.close()
-	return s
+    f = open(filename, 'rt')
+    s = f.read()
+    f.close()
+    return s
 
 
 def print_usage():
-	usage = """
+    usage = """
 Usage:
-	%(cmd)s eval <python_file> <data_file>
-	%(cmd)s solve <python_file> <data_file>
-	%(cmd)s syn <python_file>
-			""" % {"cmd":sys.argv[0]}
-	print(usage)
-
-
-# Large float and imaginary literals get turned into infinities in the AST.
-# We unparse those infinities to INFSTR.
-INFSTR = "1e" + repr(sys.float_info.max_10_exp + 1)
-
-def interleave(inter, f, seq):
-    """Call f on each item in seq, calling inter() in between.
-    """
-    seq = iter(seq)
-    try:
-        f(next(seq))
-    except StopIteration:
-        pass
-    else:
-        for x in seq:
-            inter()
-            f(x)
-
-
-# TODO: clean up
-class Unparser:
-    """Methods in this class recursively traverse an AST and
-    output source code for the abstract syntax; original formatting
-    is disregarded. """
-
-    def __init__(self, tree, file = sys.stdout):
-        """Unparser(tree, file = sys.stdout) -> None.
-         Print the source for tree to file."""
-        self.f = file
-        self.future_imports = []
-        self._indent = 0
-        self.dispatch(tree)
-        self.f.write("")
-        self.f.flush()
-
-    def fill(self, text = ""):
-        "Indent a piece of text, according to the current indentation level"
-        self.f.write("\n"+"    "*self._indent + text)
-
-    def write(self, text):
-        "Append a piece of text to the current line."
-        self.f.write(text)
-
-    def enter(self):
-        "Print ':', and increase the indentation."
-        self.write(":")
-        self._indent += 1
-
-    def leave(self):
-        "Decrease the indentation level."
-        self._indent -= 1
-
-    def dispatch(self, tree):
-        "Dispatcher function, dispatching tree type T to method _T."
-        if isinstance(tree, list):
-            for t in tree:
-                self.dispatch(t)
-            return
-        meth = getattr(self, "_"+tree.__class__.__name__)
-        meth(tree)
-
-
-    ############### Unparsing methods ######################
-    # There should be one method per concrete grammar type #
-    # Constructors should be grouped by sum type. Ideally, #
-    # this would follow the order in the grammar, but      #
-    # currently doesn't.                                   #
-    ########################################################
-
-    def _Module(self, tree):
-        for stmt in tree.body:
-            self.dispatch(stmt)
-
-    # stmt
-    def _Expr(self, tree):
-        self.fill()
-        self.dispatch(tree.value)
-
-    def _Import(self, t):
-        self.fill("import ")
-        interleave(lambda: self.write(", "), self.dispatch, t.names)
-
-    def _ImportFrom(self, t):
-        # A from __future__ import may affect unparsing, so record it.
-        if t.module and t.module == '__future__':
-            self.future_imports.extend(n.name for n in t.names)
-
-        self.fill("from ")
-        self.write("." * t.level)
-        if t.module:
-            self.write(t.module)
-        self.write(" import ")
-        interleave(lambda: self.write(", "), self.dispatch, t.names)
-
-    def _Assign(self, t):
-        self.fill()
-        for target in t.targets:
-            self.dispatch(target)
-            self.write(" = ")
-        self.dispatch(t.value)
-
-    def _AugAssign(self, t):
-        self.fill()
-        self.dispatch(t.target)
-        self.write(" "+self.binop[t.op.__class__.__name__]+"= ")
-        self.dispatch(t.value)
-
-    def _Return(self, t):
-        self.fill("return")
-        if t.value:
-            self.write(" ")
-            self.dispatch(t.value)
-
-    def _Pass(self, t):
-        self.fill("pass")
-
-    def _Break(self, t):
-        self.fill("break")
-
-    def _Continue(self, t):
-        self.fill("continue")
-
-    def _Delete(self, t):
-        self.fill("del ")
-        interleave(lambda: self.write(", "), self.dispatch, t.targets)
-
-    def _Assert(self, t):
-        self.fill("assert ")
-        self.dispatch(t.test)
-        if t.msg:
-            self.write(", ")
-            self.dispatch(t.msg)
-
-    def _Exec(self, t):
-        self.fill("exec ")
-        self.dispatch(t.body)
-        if t.globals:
-            self.write(" in ")
-            self.dispatch(t.globals)
-        if t.locals:
-            self.write(", ")
-            self.dispatch(t.locals)
-
-    def _Print(self, t):
-        self.fill("print ")
-        do_comma = False
-        if t.dest:
-            self.write(">>")
-            self.dispatch(t.dest)
-            do_comma = True
-        for e in t.values:
-            if do_comma:self.write(", ")
-            else:do_comma = True
-            self.dispatch(e)
-        if not t.nl:
-            self.write(",")
-
-    def _Global(self, t):
-        self.fill("global ")
-        interleave(lambda: self.write(", "), self.write, t.names)
-
-    def _Yield(self, t):
-        self.write("(")
-        self.write("yield")
-        if t.value:
-            self.write(" ")
-            self.dispatch(t.value)
-        self.write(")")
-
-    def _Raise(self, t):
-        self.fill('raise ')
-        if t.type:
-            self.dispatch(t.type)
-        if t.inst:
-            self.write(", ")
-            self.dispatch(t.inst)
-        if t.tback:
-            self.write(", ")
-            self.dispatch(t.tback)
-
-    def _TryExcept(self, t):
-        self.fill("try")
-        self.enter()
-        self.dispatch(t.body)
-        self.leave()
-
-        for ex in t.handlers:
-            self.dispatch(ex)
-        if t.orelse:
-            self.fill("else")
-            self.enter()
-            self.dispatch(t.orelse)
-            self.leave()
-
-    def _TryFinally(self, t):
-        if len(t.body) == 1 and isinstance(t.body[0], ast.TryExcept):
-            # try-except-finally
-            self.dispatch(t.body)
-        else:
-            self.fill("try")
-            self.enter()
-            self.dispatch(t.body)
-            self.leave()
-
-        self.fill("finally")
-        self.enter()
-        self.dispatch(t.finalbody)
-        self.leave()
-
-    def _ExceptHandler(self, t):
-        self.fill("except")
-        if t.type:
-            self.write(" ")
-            self.dispatch(t.type)
-        if t.name:
-            self.write(" as ")
-            self.dispatch(t.name)
-        self.enter()
-        self.dispatch(t.body)
-        self.leave()
-
-    def _ClassDef(self, t):
-        self.write("\n")
-        for deco in t.decorator_list:
-            self.fill("@")
-            self.dispatch(deco)
-        self.fill("class "+t.name)
-        if t.bases:
-            self.write("(")
-            for a in t.bases:
-                self.dispatch(a)
-                self.write(", ")
-            self.write(")")
-        self.enter()
-        self.dispatch(t.body)
-        self.leave()
-
-    def _FunctionDef(self, t):
-        self.write("\n")
-        for deco in t.decorator_list:
-            self.fill("@")
-            self.dispatch(deco)
-        self.fill("def "+t.name + "(")
-        self.dispatch(t.args)
-        self.write(")")
-        self.enter()
-        self.dispatch(t.body)
-        self.leave()
-
-    def _For(self, t):
-        self.fill("for ")
-        self.dispatch(t.target)
-        self.write(" in ")
-        self.dispatch(t.iter)
-        self.enter()
-        self.dispatch(t.body)
-        self.leave()
-        if t.orelse:
-            self.fill("else")
-            self.enter()
-            self.dispatch(t.orelse)
-            self.leave()
-
-    def _If(self, t):
-        self.fill("if ")
-        self.dispatch(t.test)
-        self.enter()
-        self.dispatch(t.body)
-        self.leave()
-        # collapse nested ifs into equivalent elifs.
-        while (t.orelse and len(t.orelse) == 1 and
-               isinstance(t.orelse[0], ast.If)):
-            t = t.orelse[0]
-            self.fill("elif ")
-            self.dispatch(t.test)
-            self.enter()
-            self.dispatch(t.body)
-            self.leave()
-        # final else
-        if t.orelse:
-            self.fill("else")
-            self.enter()
-            self.dispatch(t.orelse)
-            self.leave()
-
-    def _While(self, t):
-        self.fill("while ")
-        self.dispatch(t.test)
-        self.enter()
-        self.dispatch(t.body)
-        self.leave()
-        if t.orelse:
-            self.fill("else")
-            self.enter()
-            self.dispatch(t.orelse)
-            self.leave()
-
-    def _With(self, t):
-        self.fill("with ")
-        self.dispatch(t.context_expr)
-        if t.optional_vars:
-            self.write(" as ")
-            self.dispatch(t.optional_vars)
-        self.enter()
-        self.dispatch(t.body)
-        self.leave()
-
-    # expr
-    def _Str(self, tree):
-        # if from __future__ import unicode_literals is in effect,
-        # then we want to output string literals using a 'b' prefix
-        # and unicode literals with no prefix.
-        if "unicode_literals" not in self.future_imports:
-            self.write(repr(tree.s))
-        elif isinstance(tree.s, str):
-            self.write("b" + repr(tree.s))
-        elif isinstance(tree.s, unicode):
-            self.write(repr(tree.s).lstrip("u"))
-        else:
-            assert False, "shouldn't get here"
-
-    def _Name(self, t):
-        self.write(t.id)
-
-    def _Repr(self, t):
-        self.write("`")
-        self.dispatch(t.value)
-        self.write("`")
-
-    def _Num(self, t):
-        repr_n = repr(t.n)
-        # Parenthesize negative numbers, to avoid turning (-1)**2 into -1**2.
-        if repr_n.startswith("-"):
-            self.write("(")
-        # Substitute overflowing decimal literal for AST infinities.
-        self.write(repr_n.replace("inf", INFSTR))
-        if repr_n.startswith("-"):
-            self.write(")")
-
-    def _List(self, t):
-        self.write("[")
-        interleave(lambda: self.write(", "), self.dispatch, t.elts)
-        self.write("]")
-
-    def _ListComp(self, t):
-        self.write("[")
-        self.dispatch(t.elt)
-        for gen in t.generators:
-            self.dispatch(gen)
-        self.write("]")
-
-    def _GeneratorExp(self, t):
-        self.write("(")
-        self.dispatch(t.elt)
-        for gen in t.generators:
-            self.dispatch(gen)
-        self.write(")")
-
-    def _SetComp(self, t):
-        self.write("{")
-        self.dispatch(t.elt)
-        for gen in t.generators:
-            self.dispatch(gen)
-        self.write("}")
-
-    def _DictComp(self, t):
-        self.write("{")
-        self.dispatch(t.key)
-        self.write(": ")
-        self.dispatch(t.value)
-        for gen in t.generators:
-            self.dispatch(gen)
-        self.write("}")
-
-    def _comprehension(self, t):
-        self.write(" for ")
-        self.dispatch(t.target)
-        self.write(" in ")
-        self.dispatch(t.iter)
-        for if_clause in t.ifs:
-            self.write(" if ")
-            self.dispatch(if_clause)
-
-    def _IfExp(self, t):
-        self.write("(")
-        self.dispatch(t.body)
-        self.write(" if ")
-        self.dispatch(t.test)
-        self.write(" else ")
-        self.dispatch(t.orelse)
-        self.write(")")
-
-    def _Set(self, t):
-        assert(t.elts) # should be at least one element
-        self.write("{")
-        interleave(lambda: self.write(", "), self.dispatch, t.elts)
-        self.write("}")
-
-    def _Dict(self, t):
-        self.write("{")
-        def write_pair(pair):
-            (k, v) = pair
-            self.dispatch(k)
-            self.write(": ")
-            self.dispatch(v)
-        interleave(lambda: self.write(", "), write_pair, zip(t.keys, t.values))
-        self.write("}")
-
-    def _Tuple(self, t):
-        self.write("(")
-        if len(t.elts) == 1:
-            (elt, ) = t.elts
-            self.dispatch(elt)
-            self.write(",")
-        else:
-            interleave(lambda: self.write(", "), self.dispatch, t.elts)
-        self.write(")")
-
-    unop = {"Invert":"~", "Not": "not", "UAdd":"+", "USub":"-"}
-    def _UnaryOp(self, t):
-        self.write("(")
-        self.write(self.unop[t.op.__class__.__name__])
-        self.write(" ")
-        # If we're applying unary minus to a number, parenthesize the number.
-        # This is necessary: -2147483648 is different from -(2147483648) on
-        # a 32-bit machine (the first is an int, the second a long), and
-        # -7j is different from -(7j).  (The first has real part 0.0, the second
-        # has real part -0.0.)
-        if isinstance(t.op, ast.USub) and isinstance(t.operand, ast.Num):
-            self.write("(")
-            self.dispatch(t.operand)
-            self.write(")")
-        else:
-            self.dispatch(t.operand)
-        self.write(")")
-
-    binop = { "Add":"+", "Sub":"-", "Mult":"*", "Div":"/", "Mod":"%",
-                    "LShift":"<<", "RShift":">>", "BitOr":"|", "BitXor":"^", "BitAnd":"&",
-                    "FloorDiv":"//", "Pow": "**"}
-    def _BinOp(self, t):
-        self.write("(")
-        self.dispatch(t.left)
-        self.write(" " + self.binop[t.op.__class__.__name__] + " ")
-        self.dispatch(t.right)
-        self.write(")")
-
-    cmpops = {"Eq":"==", "NotEq":"!=", "Lt":"<", "LtE":"<=", "Gt":">", "GtE":">=",
-                        "Is":"is", "IsNot":"is not", "In":"in", "NotIn":"not in"}
-    def _Compare(self, t):
-        self.write("(")
-        self.dispatch(t.left)
-        for o, e in zip(t.ops, t.comparators):
-            self.write(" " + self.cmpops[o.__class__.__name__] + " ")
-            self.dispatch(e)
-        self.write(")")
-
-    boolops = {ast.And: 'and', ast.Or: 'or'}
-    def _BoolOp(self, t):
-        self.write("(")
-        s = " %s " % self.boolops[t.op.__class__]
-        interleave(lambda: self.write(s), self.dispatch, t.values)
-        self.write(")")
-
-    def _Attribute(self, t):
-        self.dispatch(t.value)
-        # Special case: 3.__abs__() is a syntax error, so if t.value
-        # is an integer literal then we need to either parenthesize
-        # it or add an extra space to get 3 .__abs__().
-        if isinstance(t.value, ast.Num) and isinstance(t.value.n, int):
-            self.write(" ")
-        self.write(".")
-        self.write(t.attr)
-
-    def _Call(self, t):
-        self.dispatch(t.func)
-        self.write("(")
-        comma = False
-        for e in t.args:
-            if comma: self.write(", ")
-            else: comma = True
-            self.dispatch(e)
-        for e in t.keywords:
-            if comma: self.write(", ")
-            else: comma = True
-            self.dispatch(e)
-            #if t.starargs:
-            #    if comma: self.write(", ")
-            #    else: comma = True
-            #    self.write("*")
-            #    self.dispatch(t.starargs)
-        #if t.kwargs:
-        #    if comma: self.write(", ")
-        #    else: comma = True
-        #    self.write("**")
-        #    self.dispatch(t.kwargs)
-        self.write(")")
-
-    def _Subscript(self, t):
-        self.dispatch(t.value)
-        self.write("[")
-        self.dispatch(t.slice)
-        self.write("]")
-
-    # slice
-    def _Ellipsis(self, t):
-        self.write("...")
-
-    def _Index(self, t):
-        self.dispatch(t.value)
-
-    def _Slice(self, t):
-        if t.lower:
-            self.dispatch(t.lower)
-        self.write(":")
-        if t.upper:
-            self.dispatch(t.upper)
-        if t.step:
-            self.write(":")
-            self.dispatch(t.step)
-
-    def _ExtSlice(self, t):
-        interleave(lambda: self.write(', '), self.dispatch, t.dims)
-
-    # others
-    def _arguments(self, t):
-        first = True
-        # normal arguments
-        defaults = [None] * (len(t.args) - len(t.defaults)) + t.defaults
-        for a, d in zip(t.args, defaults):
-            if first:first = False
-            else: self.write(", ")
-            self.dispatch(a),
-            if d:
-                self.write("=")
-                self.dispatch(d)
-
-        # varargs
-        if t.vararg:
-            if first:first = False
-            else: self.write(", ")
-            self.write("*")
-            self.write(t.vararg)
-
-        # kwargs
-        if t.kwarg:
-            if first:first = False
-            else: self.write(", ")
-            self.write("**"+t.kwarg)
-
-    def _keyword(self, t):
-        self.write(t.arg)
-        self.write("=")
-        self.dispatch(t.value)
-
-    def _Lambda(self, t):
-        self.write("(")
-        self.write("lambda ")
-        self.dispatch(t.args)
-        self.write(": ")
-        self.dispatch(t.body)
-        self.write(")")
-
-    def _alias(self, t):
-        self.write(t.name)
-        if t.asname:
-            self.write(" as "+t.asname)
-
+    %(cmd)s eval <python_file> <data_file>
+    %(cmd)s solve <python_file> <data_file>
+    %(cmd)s syn <python_file>
+            """ % {"cmd":sys.argv[0]}
+    print(usage)
 
 if __name__ == '__main__':
-	if (len(sys.argv) == 1):
-		print_usage()
-		exit(1)
-	if sys.argv[1] == 'eval':
-		eval_app(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
-	elif sys.argv[1] == 'solve':
-		solve_app(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
-	elif sys.argv[1] == 'syn':
-		syn_app(read_file_to_string(sys.argv[2]))
-	else:
-		print "Unknown command %s" % (sys.argv[1])
-		print_usage()
-		exit(1)
-	
+    if (len(sys.argv) == 1):
+        print_usage()
+        exit(1)
+    if sys.argv[1] == 'eval':
+        eval_app(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
+    elif sys.argv[1] == 'solve':
+        solve_app(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
+    elif sys.argv[1] == 'syn':
+        syn_app(read_file_to_string(sys.argv[2]))
+    else:
+        print "Unknown command %s" % (sys.argv[1])
+        print_usage()
+        exit(1)
+    
