@@ -1,7 +1,7 @@
 #!/usr/bin/env python
+
 import ast
 import copy
-import cStringIO
 import inspect
 import logging
 import os
@@ -9,21 +9,6 @@ import re
 import sys
 import z3
 
-#
-# Context class used when executing AST trees prepared by InstrumentingVisitor
-#
-# Provides instrumentation/wrapper functions injected in AST
-# 
-# Provides mechanism to iterate through all possible if trees by changing the
-# result of the conditional in the wrapper (see nextPath())
-#
-# Use:
-#    cc = SymExecContext(vv.refCnt)
-#    sc = {"cond_context":cc}
-#    sc2 = {}
-#    exec(comp, sc, sc2)
-#    rv = sc2['f'].__call__(*args)
-#
 
 class ExecutionPath:
     """
@@ -80,6 +65,7 @@ class ExecutionPath:
         else:
             return z3.And(*self.cond)
 
+
 class PathLog:
     """Keeps track of paths already encountered"""
     
@@ -93,6 +79,7 @@ class PathLog:
                 return False
         self.paths.append(path)
         return True
+
 
 class FunctionExecutor:
     """
@@ -149,14 +136,15 @@ class FunctionExecutor:
 
         return outData
 
+
 class InstrumentedExecutor(FunctionExecutor):
     """
     Utility class for execution after instrumentation. To be bound to global variable "cond_context".
     Upon execution of the instrumented function forces execution along a predefined path and captures
     the conditions passed to the wrap_condition(). While 
     Can be switched to next path using nextPath()
-    
     """
+
     def __init__(self, astTree, fname = 'f'):
 
         self.tree = copy.deepcopy(astTree)
@@ -226,25 +214,7 @@ class InstrumentedExecutor(FunctionExecutor):
     def resetPath(self):
         self.choice = -1
 
-#
-#
-#   if x == 0:
-#      ...
-#   else:
-#      y = 1/x
-#
-#
-#   f(z3.Int('_X'))
-# ....
-#   if(x == 0):  #== z3.Expr('_X == 0')
-#  -->
-#   if(cond_context.wrap_condition(label, x == 0):
-#
-# ...
-#
-#        x = x + 1  #== z3.Expr('_X+1')
-#             if cond_context.wrap_condition(label2, x >25):  #== z3.Expr('_X+1>25')
-#
+
 # expects global var cond_context: class with methods 
 #    instrument(self, refNo, marker[[e.g. if endif else endelse]])
 #    wrap_condition(self, refNo, condition, refToOuterIf)
@@ -378,15 +348,6 @@ class TemplateTransformer(ast.NodeTransformer):
         return rv
 
 
-# Test Cases: 
-#    Input unrelate output
-#    Assembly/disassemly by switch/case
-#    Result dep on single in-var --> rest undefined
-#    Div 0
-#    Overflow
-
-
-
 class ResultIteratingSolver:
     """
     Wrapper around z3 solver that allows trying additional conditions. z3 solver backtracking undoes the condition
@@ -454,9 +415,6 @@ class ResultIteratingSolver:
         self.previousSolutionConds.append(self.genAvoidCondition(res))
         self.results.append(res)
         return res
-
-    
-
 
 
 class FuncAnalyzer:
@@ -601,6 +559,7 @@ class FuncAnalyzer:
 
         return solver.results
 
+
 class UnknownChoiceDesc():
     """
     Helper class to track unknown choice items
@@ -651,8 +610,10 @@ class UnknownChoiceDesc():
         conds = self._selection_conds+self._selection_instance_conds
         return conds
 
+
 class UnknownHandlingExecutor(InstrumentedExecutor):
     """Function executor that also supports unknown_int and unknown_choice in cond_context"""
+
     def __init__(self, astTree, fname = 'f'):    
         InstrumentedExecutor.__init__(self, astTree, fname)
 
@@ -694,6 +655,7 @@ class UnknownHandlingExecutor(InstrumentedExecutor):
         for x in self.unknown_choices.values():
             con += x.condition
         return con
+
 
 class ChoiceState:
     def __init__(self, maxStates):
@@ -881,8 +843,10 @@ class FuncSynthesizer:
             rv.append(FunctionExecutor( self.template(sol, None, hypos[i]), 'f_inv'))
         return rv
 
+
 WITH_HYPO = True
 logging.basicConfig(level = logging.WARN)
+
 
 def solve_app(program, tests):
 	p = ast.parse(program)
@@ -946,12 +910,14 @@ def syn_app(program):
 		tr = funcSynth.template(unknown_vars, unknown_choices)
 		Unparser(find_function(tr, 'f_inv'))
 
+
 def find_function(p, function_name):
 	assert(type(p).__name__ == 'Module')
 	for x in p.body:
 		if type(x).__name__ == 'FunctionDef' and x.name == function_name:
 			return x;
 	raise Exception('Function %s not found' % (function_name))
+
 
 def eval_f(f, indata):
 	assert(type(f).__name__ == 'FunctionDef')
@@ -1079,11 +1045,13 @@ def eval_app(program, tests):
 		indata = [ int(x) for x in test.split(' ') ]
 		print(' '.join([ str(x) for x in eval_f(f, indata) ]))
 
+
 def read_file_to_string(filename):
 	f = open(filename, 'rt')
 	s = f.read()
 	f.close()
 	return s
+
 
 def print_usage():
 	usage = """
@@ -1093,6 +1061,7 @@ Usage:
 	%(cmd)s syn <python_file>
 			""" % {"cmd":sys.argv[0]}
 	print(usage)
+
 
 # Large float and imaginary literals get turned into infinities in the AST.
 # We unparse those infinities to INFSTR.
@@ -1111,6 +1080,8 @@ def interleave(inter, f, seq):
             inter()
             f(x)
 
+
+# TODO: clean up
 class Unparser:
     """Methods in this class recursively traverse an AST and
     output source code for the abstract syntax; original formatting
@@ -1657,6 +1628,7 @@ class Unparser:
         self.write(t.name)
         if t.asname:
             self.write(" as "+t.asname)
+
 
 if __name__ == '__main__':
 	if (len(sys.argv) == 1):
