@@ -18,6 +18,7 @@ class Sample(FunctionLoader):
 
     def __init__(self, p):
         assert path.isfile(p)
+        super(FunctionLoader, self).__init__(p)
 
         name, _ = path.splitext(p)
 

@@ -22,7 +22,14 @@ class FunctionLoader:
         # they are used for lazy initialization
         self.source = None
         self.ast = None
-         
+        
+    def has_f(self):
+        p = self.get_ast()
+        for node in p.body:
+            if FunctionLoader.is_f(node):
+                return True
+        return False
+
     def has_template(self):
         p = self.get_ast()
         for node in p.body:
@@ -135,6 +142,22 @@ class PathLog:
                 return False
         self.paths.append(path)
         return True
+
+
+def compile_ast(f):
+    """
+    Compiles a function in ast form and returns it.
+    
+    Once returned the function can be called just like any other python function
+    """
+    assert(type(ast).name == "FunctionDef")
+
+    ast.fix_missing_locations(f)
+    compiled = compile(f, "<pysyn.compile_ast>", "exec")
+
+    scope = {}
+    exec compiled in scope
+    return scope[f.name]
 
 
 class FunctionExecutor:
@@ -480,7 +503,6 @@ class FuncAnalyzer:
     
     def __init__(self, astTree, fname ='f'):
         self.func = InstrumentedExecutor(astTree, fname)
-        self.oFunc = FunctionExecutor(astTree, fname)
         
         self.outVars = []
             
@@ -752,8 +774,6 @@ class FuncSynthesizer:
     
     def __init__(self, astTree, fname = 'f'):
         self.func = UnknownHandlingExecutor(astTree, fname)
-        self.oFunc = FunctionExecutor(astTree, fname)
-        
 
     def reverseData(self, data):
         """
@@ -907,13 +927,12 @@ logging.basicConfig(level = logging.WARN)
 def solve_app(program, tests):
     p = ast.parse(program)
     logging.debug("AST Tree of read file:\n"+ast.dump(p))
-    f = find_function(p, 'f')
     
     fa = FuncAnalyzer(p)
     
-    
     solver = z3.Solver()
     conds = fa.calcForward()
+    out_vec = []
     for test in tests.split('\n'):
         if len(test) == 0:
             continue        
@@ -928,9 +947,11 @@ def solve_app(program, tests):
             logging.info("Model :\n"+str(m))
             #varNames = [str(x) for x in fa.inVars]
             vals = [m[x] for x in fa.inVars]
-            print(' '.join([ str(x) for x in vals]))
+            out_vec.append(vals)
         else:
-            print "Unsat\n"
+            out_vec.append("Unsat")
+
+    return out_vec
 
 
 def syn_app(program):
@@ -1285,17 +1306,27 @@ Usage:
             """ % {"cmd":sys.argv[0]}
     print(usage)
 
+def main_eval(source, data):
+    eval_app(source, data)
+
+def main_solve(source, data):
+    out_vec = solve_app(source, data)
+    for out in out_vec:
+        print " ".join(map(str, out))
+
+def main_syn(source):
+    syn_app(source)
 
 if __name__ == '__main__':
     if (len(sys.argv) == 1):
         print_usage()
         exit(1)
     if sys.argv[1] == 'eval':
-        eval_app(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
+        main_eval(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
     elif sys.argv[1] == 'solve':
-        solve_app(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
+        main_solve(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
     elif sys.argv[1] == 'syn':
-        syn_app(read_file_to_string(sys.argv[2]))
+        main_syn(read_file_to_string(sys.argv[2]))
     else:
         print "Unknown command %s" % (sys.argv[1])
         print_usage()
