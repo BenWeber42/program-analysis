@@ -7,8 +7,65 @@ import logging
 import re
 import sys
 import z3
+from os import path
     
+
+class FunctionLoader:
+    """
+    Offers functionality to load functions ('f' & 'f_inv') as ast trees
+    """
+
+    def __init__(self, p):
+        assert path.isfile(p)
+
+        self.sample = p
+        # they are used for lazy initialization
+        self.source = None
+        self.ast = None
+         
+    def has_template(self):
+        p = self.get_ast()
+        for node in p.body:
+            if FunctionLoader.is_template(node):
+                return True
+        return False
+   
+    def get_source(self):
+        if self.source == None:
+            self.source = read_file_to_string(self.sample)
+        return self.source
+
+    def get_ast(self):
+        if self.ast == None:
+            self.ast = ast.parse(self.get_source())
+        return self.ast
+   
+    def get_f(self):
+        p = self.get_ast()
+        for node in p.body:
+            if FunctionLoader.is_f(node):
+                return node
+  
+    def get_template(self):
+        assert self.has_template()
+        p = self.get_ast()
+        for node in p.body:
+            if FunctionLoader.is_template(node):
+                return node
+                 
+    @classmethod
+    def is_f(cls, ast):
+        return cls.is_function(ast, "f")
+  
+    @classmethod
+    def is_template(cls, ast):
+        return cls.is_function(ast, "f_inv")
+   
+    @classmethod
+    def is_function(cls, ast, name):
+        return type(ast).name == "FunctionDef" and ast.name == name
     
+
 class ExecutionPath:
     """
     Represents the conditions for one execution path.
@@ -1187,6 +1244,38 @@ def read_file_to_string(filename):
     return s
 
 
+def load_vectors(p):
+    """
+    Loads the vectors from a file `p' into a list of lists
+    
+    see parse_vectors regarding the format of the list of lists
+    """
+    return parse_vectors(read_file_to_string(p))
+
+
+def parse_vectors(s):
+    """
+    Parses the vectors from a string `s' into a list of lists
+    
+    a1 a2 a3 a4
+    b1 b2 b3
+    Unsat
+    c1 c2 c3
+    
+    would become
+    
+    [
+    [a1, a2, a3, a4],
+    [b1, b2, b3],
+    "Unsat",
+    [c1, c2, c3]
+    ]
+    
+    Where a1, a2, b1, c1 etc integers are
+    """
+    return [ map(lambda x: x if x == "Unsat" else int(x), vec.split(" ")) for vec in s.split("\n") if vec != '']
+
+
 def print_usage():
     usage = """
 Usage:
@@ -1195,6 +1284,7 @@ Usage:
     %(cmd)s syn <python_file>
             """ % {"cmd":sys.argv[0]}
     print(usage)
+
 
 if __name__ == '__main__':
     if (len(sys.argv) == 1):
