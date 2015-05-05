@@ -3,7 +3,7 @@ Carries out several tests involving sample programs.
 """
 
 from os import path
-from pysyn import FunctionLoader, load_vectors, solve_app, compile_ast
+from pysyn import FunctionLoader, load_vectors, solve_app, compile_ast, syn_app
 from glob import glob
 from traceback import print_exc
 
@@ -62,35 +62,45 @@ class SampleTester:
         self.sample = sample
     
     def run(self):
-        # TODO: syn
         if self.sample.has_output():
+            self.run_solve()
+        if self.sample.has_template():
+            self.run_syn()
 
-            ys = self.sample.get_output()
-            try:
-                xs = solve_app(self.sample.get_source(), ys)
-            except:
-                print("Command solve failed on sample '%s'!" % self.sample.path)
-                print_exc()
-                return
-            else:
 
-                # verify:
-                f = compile_ast(self.sample.get_f())
+    def run_solve(self):
+        ys = self.sample.get_output()
+        try:
+            xs = solve_app(self.sample.get_source(), ys)
+        except:
+            print("Command solve failed on sample '%s'!" % self.sample.path)
+            print_exc()
+            return
+        else:
+            # verify:
+            f = compile_ast(self.sample.get_f())
             
-                for x, y in zip(xs, ys):
-                    if y != "Unsat":
-                        y_ref = list(f(*x))
-                        if y_ref != y:
-                            print "Incorrectly solved f(%s) = (%s) because f(%s) = (%s)!" % (
-                                ", ".join(x),
-                                ", ".join(y),
-                                ", ".join(x),
-                                ", ".join(y_ref)
-                                )
-                    # TODO: what about "Unsat"?
+            for x, y in zip(xs, ys):
+                if y != "Unsat":
+                    y_ref = list(f(*x))
+                    if y_ref != y:
+                        print "Incorrectly solved f(%s) = (%s) because f(%s) = (%s)!" % (
+                            ", ".join(x),
+                            ", ".join(y),
+                            ", ".join(x),
+                            ", ".join(y_ref)
+                            )
+                # TODO: what about "Unsat"?
                 
+    def run_syn(self):
+        # TODO: improve (take potential reference solution into account)
+        try:
+            syn_app(self.sample.get_source())
+        except:
+            print("Command syn failed on sample '%s'!" % self.sample.path)
+            print_exc()
+            return
 
-        # TODO: syn functionality
         
 if __name__ == "__main__":
     # ugly hack to collect .py files in sub directories

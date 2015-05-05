@@ -71,7 +71,7 @@ class FunctionLoader(object):
    
     @classmethod
     def is_function(cls, ast, name):
-        return type(ast).name == "FunctionDef" and ast.name == name
+        return type(ast).__name__ == "FunctionDef" and ast.name == name
     
 
 class ExecutionPath:
@@ -975,19 +975,17 @@ def syn_app(program):
         (hypos, solutions) = funcSynth.solveHypos(trainingData, hypos, 16)
         funcs = funcSynth.templateHypos(hypos, solutions)
         if(len(funcs) == 0):
-            print "Unsat"
-            return 1
+            return "Unsat"
         
-        print ast_to_source(find_function(funcs[0].tree, 'f_inv'))
+        return ast_to_source(find_function(funcs[0].tree, 'f_inv'))
     
     else:
         unknown_vars, unknown_choices = funcSynth.solveUnknowns(trainingData)
         if unknown_vars is None:
-            print "Unsat"
-            return 1
+            return "Unsat"
         
         tr = funcSynth.template(unknown_vars, unknown_choices)
-        print ast_to_source(find_function(tr, 'f_inv'))
+        return ast_to_source(find_function(tr, 'f_inv'))
 
 
 def find_function(p, function_name):
@@ -1317,7 +1315,7 @@ def main_solve(source, data):
         print " ".join(map(str, out))
 
 def main_syn(source):
-    syn_app(source)
+    print syn_app(source)
 
 if __name__ == '__main__':
     if (len(sys.argv) == 1):
