@@ -75,7 +75,6 @@ class SampleTester:
         except:
             print("Command solve failed on sample '%s'!" % self.sample.path)
             print_exc()
-            return
         else:
             # verify:
             f = compile_ast(self.sample.get_f())
@@ -95,11 +94,13 @@ class SampleTester:
     def run_syn(self):
         # TODO: improve (take potential reference solution into account)
         try:
-            syn_app(self.sample.get_source())
+            out = syn_app(self.sample.get_source())
         except:
             print("Command syn failed on sample '%s'!" % self.sample.path)
             print_exc()
-            return
+        else:
+            print("Syn yielded on sample '%s':" % self.sample.path)
+            print out
 
         
 if __name__ == "__main__":
