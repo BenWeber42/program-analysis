@@ -9,8 +9,9 @@ import sys
 import z3
 from os import path
     
+logging.basicConfig(level = logging.WARN)
 
-class FunctionLoader:
+class FunctionLoader(object):
     """
     Offers functionality to load functions ('f' & 'f_inv') as ast trees
     """
@@ -18,7 +19,7 @@ class FunctionLoader:
     def __init__(self, p):
         assert path.isfile(p)
 
-        self.sample = p
+        self.path = p
         # they are used for lazy initialization
         self.source = None
         self.ast = None
@@ -39,7 +40,7 @@ class FunctionLoader:
    
     def get_source(self):
         if self.source == None:
-            self.source = read_file_to_string(self.sample)
+            self.source = read_file_to_string(self.path)
         return self.source
 
     def get_ast(self):
@@ -518,7 +519,11 @@ class FuncAnalyzer:
         return a z3 condition
         """
         cond = []
-        for i in range(0, len(v)):
+        if len(v) != len(data):
+            logging.error("len(v) != len(data)!")
+
+        # TODO: fix error, sometimes len(v) != len(data)!
+        for i in range(0, min(len(v), len(data))):
             cond.append(v[i] == data[i])
         return z3.And(*cond)
     
@@ -921,7 +926,6 @@ class FuncSynthesizer:
 
 
 WITH_HYPO = True
-logging.basicConfig(level = logging.WARN)
 
 
 def solve_app(program, tests):
@@ -933,10 +937,8 @@ def solve_app(program, tests):
     solver = z3.Solver()
     conds = fa.calcForward()
     out_vec = []
-    for test in tests.split('\n'):
-        if len(test) == 0:
-            continue        
-        outdata = [ int(x) for x in test.split(' ') ]
+
+    for outdata in tests:
         solver.reset()
         solver.add(*conds)
         solver.add(fa.matchOut(outdata))
@@ -1310,7 +1312,7 @@ def main_eval(source, data):
     eval_app(source, data)
 
 def main_solve(source, data):
-    out_vec = solve_app(source, data)
+    out_vec = solve_app(source, parse_vectors(data))
     for out in out_vec:
         print " ".join(map(str, out))
 
