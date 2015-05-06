@@ -7,7 +7,7 @@ from os import path
 from glob import glob
 from traceback import print_exc
 from sys import argv
-import ast
+from ast import parse
 from pysyn import *
 
 class Sample(FunctionLoader):
@@ -64,8 +64,10 @@ class Sample(FunctionLoader):
         return self.reference_source
 
     def get_reference(self):
+        if self.get_reference_source() == "Unsat":
+            return "Unsat"
         if self.reference_ast == None:
-            self.reference_ast = ast.parse(self.get_reference_source())
+            self.reference_ast = parse(self.get_reference_source())
         for node in self.reference_ast.body:
             if FunctionLoader.is_template(node):
                 return node
@@ -75,10 +77,10 @@ class SampleTester:
     def __init__(self, sample):
         self.sample = sample
     
-    def run(self):
-        if self.sample.has_output():
+    def run(self, syn = True, solve = True):
+        if solve and self.sample.has_output():
             self.run_solve()
-        if self.sample.has_template():
+        if syn and self.sample.has_template():
             self.run_syn()
 
 
@@ -107,33 +109,61 @@ class SampleTester:
                 
     def run_syn(self):
         try:
-            out = syn_app(self.sample.get_source())
+            actual = syn_app(self.sample.get_source())
         except:
             print("Command syn failed on sample '%s'!" % self.sample.path)
             print_exc()
         else:
             if not self.sample.has_reference():
                 print("Syn yielded on sample '%s':" % self.sample.path)
-                print out
+                print(actual)
                 return
             
-            actual = find_function(ast.parse(out), "f_inv")
             ref = self.sample.get_reference()
 
-            # could be improved, but seems to suffice
-            if ast_to_source(actual) != ast_to_source(ref):
-                print("Synthesized solution differs from reference solution!")
-                print("Reference Solution:")
-                print(ast_to_source(ref))
-                print("")
-                print("Synthesized Solution:")
-                print(ast_to_source(actual))
-                print("")
+            if ref != "Unsat":
+                ref = ast_to_source(ref)
 
+            if actual == ref:
+                return
+
+            print("Synthesized solution differs from reference solution!")
+            print("Reference Solution:")
+            print(ref)
+            print("")
+            print("Synthesized Solution:")
+            print(actual)
+            print("")
 
         
 if __name__ == "__main__":
     # ugly hack to collect .py files in sub directories
+    if "--help" in argv:
+        print("Usage: %s [--help] [--syn] [--solve] [list of test files]" % argv[0])
+        print("   --help          Prints this help message and exits.")
+        print("   --syn           Run at least 'syn' command on all specified test files.")
+        print("   --solve         Run at least 'solve' command on all specified test files.")
+        print("")
+        print("                   If neither --syn nor --solve are given, then both")
+        print("                   'syn' and 'solve' command are run on all specified")
+        print("                   test files.")
+        print("")
+        print("   [list of files] If empty use all .py files in the samples folder")
+        print("                   except for .ref.py files as specified test files.")
+        print("                   Otherwise test on the list of files given.")
+        exit()
+
+    syn = "--syn" in argv
+    solve = "--solve" in argv
+    
+    if syn:
+        argv.remove("--syn")
+    if solve:
+        argv.remove("--solve")
+
+    if not syn and not solve:
+        syn = solve = True
+
     if len(argv) <= 1:
         tests = glob("./samples/*.py")
         tests += glob("./samples/*/*.py")
@@ -148,5 +178,5 @@ if __name__ == "__main__":
             continue
         test = SampleTester(Sample(f))
         print(">>> Running testcase '%s'" % f)
-        test.run()
+        test.run(syn, solve)
         print("")
