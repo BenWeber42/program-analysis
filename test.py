@@ -1,11 +1,14 @@
+#!/usr/bin/env python
 """
 Carries out several tests involving sample programs.
 """
 
 from os import path
-from pysyn import FunctionLoader, load_vectors, solve_app, compile_ast, syn_app
 from glob import glob
 from traceback import print_exc
+from sys import argv
+import ast
+from pysyn import *
 
 class Sample(FunctionLoader):
     """
@@ -39,8 +42,7 @@ class Sample(FunctionLoader):
     def has_output(self):
         return path.isfile(self.output)
     
-    # TODO: add functionality for the reference inverse function
-    def has_ref_inverse(self):
+    def has_reference(self):
         return path.isfile(self.reference)
     
     def get_input(self):
@@ -55,6 +57,18 @@ class Sample(FunctionLoader):
             self.output = load_vectors(self.output)
         return self.output
    
+    def get_reference_source(self):
+        assert self.has_reference()
+        if self.reference_source == None:
+            self.reference_source = read_file_to_string(self.reference)
+        return self.reference_source
+
+    def get_reference(self):
+        if self.reference_ast == None:
+            self.reference_ast = ast.parse(self.get_reference_source())
+        for node in self.reference_ast.body:
+            if FunctionLoader.is_template(node):
+                return node
 
 class SampleTester:
     
@@ -92,24 +106,47 @@ class SampleTester:
                 # TODO: what about "Unsat"?
                 
     def run_syn(self):
-        # TODO: improve (take potential reference solution into account)
         try:
             out = syn_app(self.sample.get_source())
         except:
             print("Command syn failed on sample '%s'!" % self.sample.path)
             print_exc()
         else:
-            print("Syn yielded on sample '%s':" % self.sample.path)
-            print out
+            if not self.sample.has_reference():
+                print("Syn yielded on sample '%s':" % self.sample.path)
+                print out
+                return
+            
+            actual = find_function(ast.parse(out), "f_inv")
+            ref = self.sample.get_reference()
+
+            # could be improved, but seems to suffice
+            if ast_to_source(actual) != ast_to_source(ref):
+                print("Synthesized solution differs from reference solution!")
+                print("Reference Solution:")
+                print(ast_to_source(ref))
+                print("")
+                print("Synthesized Solution:")
+                print(ast_to_source(actual))
+                print("")
+
 
         
 if __name__ == "__main__":
     # ugly hack to collect .py files in sub directories
-    tests = glob("./samples/*.py")
-    tests += glob("./samples/*/*.py")
-    tests += glob("./samples/*/*/*.py")
-    tests += glob("./samples/*/*/*/*.py")
+    if len(argv) <= 1:
+        tests = glob("./samples/*.py")
+        tests += glob("./samples/*/*.py")
+        tests += glob("./samples/*/*/*.py")
+        tests += glob("./samples/*/*/*/*.py")
+    else:
+        tests = argv[1:]
+
     for f in tests:
+        # ignore reference solutions
+        if f.endswith("ref.py"):
+            continue
         test = SampleTester(Sample(f))
         print(">>> Running testcase '%s'" % f)
         test.run()
+        print("")

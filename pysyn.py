@@ -1013,7 +1013,7 @@ class AstPrinter:
         self.f = f
     
     def get_source(self):
-        out = self.f.name + "(" + ", ".join(map(self.expr_to_source, self.f.args.args)) + "):\n"
+        out = "def " + self.f.name + "(" + ", ".join(map(self.expr_to_source, self.f.args.args)) + "):\n"
         self.indent()
         out += self.block_to_source(self.f.body)
         self.detent()
