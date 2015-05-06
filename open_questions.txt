@@ -1,0 +1,4 @@
+- nested unknown functions (unknown_choice(1, unknown_int(), unknown_choice(...)))
+- unknown_choice as target of assignment (unknown_choice(x1, x2) = 3)
+- unknown_choice with tuples (return unknown_choice((x1, x2), (x2, x1)))
+- unknown_choice with boolean expressions as parameters
