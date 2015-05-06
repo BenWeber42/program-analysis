@@ -2,7 +2,7 @@
 # and solving
 
 def f(x1, x2, x3):
-    if  x1 == 0  or x2 == 0 or x3 == 0
+    if  x1 == 0  or x2 == 0 or x3 == 0:
         return x1, x2, x3, 0
     if x1*x2 >= 30:
         return x1*x2*x3, x1*x2, x2*x3, 1
