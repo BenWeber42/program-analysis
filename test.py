@@ -87,17 +87,19 @@ class SampleTester:
     def run_solve(self):
         ys = self.sample.get_output()
         try:
-            xs = solve_app(self.sample.get_source(), ys)
+            indata=read_file_to_string(ys)
+            indata_v=parse_vectors(indata)
+            xs = solve_app(self.sample.get_source(), indata_v)
         except:
             print("Command solve failed on sample '%s'!" % self.sample.path)
             print_exc()
         else:
             # verify:
-            f = compile_ast(self.sample.get_f())
+            f= FunctionExecutor(self.sample.get_ast(), 'f')
             
             for x, y in zip(xs, ys):
                 if y != "Unsat":
-                    y_ref = list(f(*x))
+                    y_ref = list(f.call(*x))
                     if y_ref != y:
                         print "Incorrectly solved f(%s) = (%s) because f(%s) = (%s)!" % (
                             ", ".join(x),

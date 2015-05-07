@@ -8,8 +8,10 @@ import re
 import sys
 import z3
 from os import path
+import threading
     
-logging.basicConfig(level = logging.WARN)
+logging.basicConfig(level = logging.DEBUG)
+ABORT_TIMEOUT=10 ##!!! Set to higher level later on
 
 class FunctionLoader(object):
     """
@@ -151,7 +153,7 @@ def compile_ast(f):
     
     Once returned the function can be called just like any other python function
     """
-    assert(type(ast).name == "FunctionDef")
+    assert(f.__class__.__name__ == "FunctionDef")
 
     ast.fix_missing_locations(f)
     compiled = compile(f, "<pysyn.compile_ast>", "exec")
@@ -351,7 +353,7 @@ class InstrumentingVisitor(ast.NodeTransformer):
         prevOuter = self.outer
 
         if node.__class__.__name__ == 'BinOp' and node.op.__class__.__name__ == "Div":
-            if node.right.func.__class__.__name__ != 'Attribute' or node.right.func.attr != 'nonZero':
+            if node.right.__class__.__name__ != 'Call' or node.right.func.__class__.__name__ != 'Attribute' or node.right.func.attr != 'nonZero':
                 fname = ast.Attribute(value = InstrumentingVisitor.ctx_var, attr="nonZero", ctx = ast.Load())
                 node.right = ast.Call(func = fname, args=[node.right], keywords=[])
         elif node.__class__.__name__ == 'Call' and node.func.__class__.__name__ == 'Name':
@@ -409,14 +411,20 @@ class TemplateTransformer(ast.NodeTransformer):
         if self.unknown_vars is not None and node.func.attr =='unknown_int':
             ref = node.args[0].n
             if not self.unknown_vars.has_key(ref):
-                raise Exception("trying to replace unknown_int with ref {0}. Solution not supplied: {1}".format(ref, self.unknown_vars))
-            val = self.unknown_vars[ref]
+                val=99999
+                #raise Exception("trying to replace unknown_int with ref {0}. Solution not supplied: {1}".format(ref, self.unknown_vars))
+                # Substitute with whatever value... Wasn't considered in the training data
+            else:
+                val = self.unknown_vars[ref]
             rv = ast.Num(n = val)
         elif self.unknown_choices is not None and node.func.attr =='unknown_choice': 
             ref = node.args[0].n
             if not self.unknown_choices.has_key(ref):
-                raise "trying to replace unknown_choice with ref {0}. Solution not supplied".format(ref)
-            sel = self.unknown_choices[ref]
+                sel=0
+                #raise "trying to replace unknown_choice with ref {0}. Solution not supplied".format(ref)
+                # Substitute with whatever value... Wasn't considered in the training data
+            else:
+                sel = self.unknown_choices[ref]
             rv = node.args[sel +1]
         elif node.func.attr =='wrap_condition': 
             self.generic_visit(node)
@@ -441,6 +449,8 @@ class ResultIteratingSolver:
          baseCond: base conditions always present
         """
         self.solver = z3.Solver()
+        #self.solver.set("max_steps",1000)
+        #self.solver.set(solver2_timeout=1)
         self.previousSolutionConds = []
         self.baseCond = baseCond
         self.solver.add(*baseCond)
@@ -483,13 +493,23 @@ class ResultIteratingSolver:
         """
         self.solver.push()
         self.solver.add(*newConds);
+
+        def abortSolving():
+            logging.debug("aborting solving")
+            self.solver.ctx.interrupt()
+                    
+        timer=threading.Timer(ABORT_TIMEOUT,abortSolving)
+        timer.start()
         if not self.solver.check() == z3.sat:
+            timer.cancel()
+            logging.debug("solver stoped: {0}".format(self.solver.reason_unknown()))
             # Remove last condition... caued to fail.
             self.solver.pop()
             return None
             # And go for next one
             #break
             
+        timer.cancel()
         m = self.solver.model()
         res = [m[x].as_long() for x in self.vars]
         self.previousSolutionConds.append(self.genAvoidCondition(res))
@@ -511,6 +531,12 @@ class FuncAnalyzer:
         for i in range(0, len(self.func.spec.args)):
             self.inVars.append(z3.Int('In'+str(i)))
 
+    def inCond(self):
+        cond=[]
+        for iv in self.inVars:
+            cond.append(iv>=-1000)
+            cond.append(iv<=1000)
+        return cond
     def matchVars(self, v, data):
         """
         Utility function to generate a z3 condition for a list
@@ -558,6 +584,7 @@ class FuncAnalyzer:
             
             condRv = self.matchOut(res)
             condPath = path.pathCondition
+            condProg+=self.inCond()
             condProg.append(z3.Implies(condPath, condRv))
             condProg.append(z3.Implies(condPath, z3.And( *extraCond)))
             
@@ -603,13 +630,15 @@ class FuncAnalyzer:
 
             #condRv = self.matchOut(res)
             condPath = path.pathCondition
-            #print condPath
+
+            logging.debug(condPath)
             #z3.Implies(condPath, condRv)
 
             varHack = []
             for iv in self.inVars:
                 varHack.append(iv == z3.Int('tmp_'+str(iv)))
                 
+            varHack+=self.inCond()
             condPath = z3.And(condPath, *varHack)
 
             solver.add(condPath)
@@ -621,6 +650,8 @@ class FuncAnalyzer:
                 continue
             
             for i_in in range(0, len(self.inVars)):
+                if inData is None:
+                    break
                 solver.reset()
                 solver.add(condPath)
                 
@@ -632,6 +663,8 @@ class FuncAnalyzer:
                         break
                     i += 1
 
+            if inData is None:
+                continue
             # Now again, across all vars, find whatever other solutions
             while(i < k *len(self.inVars)):
                 inData = solver.findSolution(inData)
@@ -895,7 +928,7 @@ class FuncSynthesizer:
         solution = []
         i = 0
         fd2 = []
-        while i <len(hypos):
+        while i <len(fd):
             fd2.append(fd[i])
             i += k
         
@@ -925,7 +958,6 @@ class FuncSynthesizer:
         return rv
 
 
-WITH_HYPO = True
 
 
 def solve_app(program, tests):
@@ -956,6 +988,8 @@ def solve_app(program, tests):
     return out_vec
 
 
+WITH_HYPO = True
+
 def syn_app(program):
     tree = ast.parse(program)
     
@@ -968,7 +1002,7 @@ def syn_app(program):
     trainingData = origfunc.genData(trainingData)
     funcSynth = FuncSynthesizer(tree, 'f_inv')
     trainingData = funcSynth.reverseData(trainingData)
-    #print trainingData
+    logging.debug(trainingData)
     
     if WITH_HYPO:
         hypos = funcSynth.genHypotheses()
