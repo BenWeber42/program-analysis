@@ -10,7 +10,7 @@ import z3
 from os import path
 import threading
     
-logging.basicConfig(level = logging.DEBUG)
+logging.basicConfig(level = logging.WARN)
 ABORT_TIMEOUT=10 ##!!! Set to higher level later on
 
 class FunctionLoader(object):
@@ -232,7 +232,7 @@ class InstrumentedExecutor(FunctionExecutor):
         self.tree = copy.deepcopy(astTree)
         vv = InstrumentingVisitor()
         self.visitor = vv
-        vv.visit(self.tree)
+        vv.visit(find_function(self.tree,fname))
         
         # Pass the cond_context down to parent class so the instrumented ast tree will compile
         FunctionExecutor.__init__(self, self.tree, fname, {"cond_context":self})
