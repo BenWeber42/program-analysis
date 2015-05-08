@@ -12,6 +12,7 @@ import threading
     
 logging.basicConfig(level = logging.WARN)
 ABORT_TIMEOUT=10 ##!!! Set to higher level later on
+WITH_HYPO = True
 
 class FunctionLoader(object):
     """
@@ -262,11 +263,14 @@ class InstrumentedExecutor(FunctionExecutor):
             raise "can only call after first use of nextPath()"
         self._currentPath = ExecutionPath()
         self._extraCond = []
-        res = FunctionExecutor.call(self, *args)
-        pth = self._currentPath
-        extraCond = self._extraCond
-        self._currentPath = None
-        self._extraCond = None
+        res=None
+        try:
+            res = FunctionExecutor.call(self, *args)
+        finally:
+            pth = self._currentPath
+            extraCond = self._extraCond
+            self._currentPath = None
+            self._extraCond = None
         return (res, pth, extraCond)
 
     def wrap_condition(self, ref, cond_in, outer):
@@ -408,6 +412,9 @@ class TemplateTransformer(ast.NodeTransformer):
         called from generic_visitor during visit for all calls. only reacts on unknown_... methods
         """
         rv = node
+        if not node.func.__class__.__name__=='Attribute':
+            return node
+        
         if self.unknown_vars is not None and node.func.attr =='unknown_int':
             ref = node.args[0].n
             if not self.unknown_vars.has_key(ref):
@@ -577,7 +584,11 @@ class FuncAnalyzer:
         self.func.resetPath()
         while self.func.nextPath():
             #print self.func
-            (res, path, extraCond) = self.func.callExt(*self.inVars)
+            try:
+                (res, path, extraCond) = self.func.callExt(*self.inVars)
+            except:
+                continue
+            
             if not pathLog.addPath(path):
                 # We encountered this path already... No need to add
                 continue
@@ -624,7 +635,13 @@ class FuncAnalyzer:
         pathLog = PathLog()
         while self.func.nextPath():
             solver.reset()
-            (res, path, extraCond) = self.func.callExt(*self.inVars)
+            try:
+                (res, path, extraCond) = self.func.callExt(*self.inVars)
+            except:
+                continue
+                
+            if res is None:
+                continue
             if not pathLog.addPath(path):
                 continue
 
@@ -835,7 +852,17 @@ class FuncSynthesizer:
             func.resetPath()
             pathLog = PathLog()
             while func.nextPath():
-                (res, path, extraCond) = func.callExt(*(t[0]))
+                try:
+                    (res, path, extraCond) = func.callExt(*(t[0]))
+                except:
+                    continue
+                
+                if isinstance(res,tuple) and len(res) != len(t[1]):
+                    raise Exception("length of return value from func eval does not match training data length")
+                
+                if res is None:
+                    continue
+                
                 if not pathLog.addPath(path):
                     continue
                 
@@ -933,7 +960,11 @@ class FuncSynthesizer:
             i += k
         
         for hypo in hypos:
-            ukv, ukc = self.solveUnknowns(fd, hypo)
+            try:
+                ukv, ukc = self.solveUnknowns(fd, hypo)
+            except:
+                # Any exception... treat as unsat hypo
+                continue
             if(ukv is not None):
                 solution.append(ukv)
                 outHypo.append(hypo)
@@ -988,7 +1019,6 @@ def solve_app(program, tests):
     return out_vec
 
 
-WITH_HYPO = True
 
 def syn_app(program):
     tree = ast.parse(program)
