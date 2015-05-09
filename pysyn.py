@@ -432,7 +432,11 @@ class TemplateTransformer(ast.NodeTransformer):
                 # Substitute with whatever value... Wasn't considered in the training data
             else:
                 sel = self.unknown_choices[ref]
-            rv = node.args[sel +1]
+            rv = self.visit(node.args[sel +1])
+            print ref
+            print sel
+            print ast.dump(node)
+            print ast.dump(rv)
         elif node.func.attr =='wrap_condition': 
             self.generic_visit(node)
             rv = node.args[1]
