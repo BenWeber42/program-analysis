@@ -433,10 +433,6 @@ class TemplateTransformer(ast.NodeTransformer):
             else:
                 sel = self.unknown_choices[ref]
             rv = self.visit(node.args[sel +1])
-            print ref
-            print sel
-            print ast.dump(node)
-            print ast.dump(rv)
         elif node.func.attr =='wrap_condition': 
             self.generic_visit(node)
             rv = node.args[1]
