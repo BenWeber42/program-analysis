@@ -97,15 +97,21 @@ class SampleTester:
             # verify:
             f= FunctionExecutor(self.sample.get_ast(), 'f')
             
-            for x, y in zip(xs, ys):
+            for x, y in zip(xs, indata_v):
                 if y != "Unsat":
-                    y_ref = list(f.call(*x))
+                    y_ref=f.call(*x)
+                    if y_ref is None:
+                        y_ref=[]
+                    elif not isinstance(y_ref,(tuple,list)):
+                        y_ref=[y_ref]
+                    else:
+                        y_ref = list(y_ref)
                     if y_ref != y:
                         print "Incorrectly solved f(%s) = (%s) because f(%s) = (%s)!" % (
-                            ", ".join(x),
-                            ", ".join(y),
-                            ", ".join(x),
-                            ", ".join(y_ref)
+                            ", ".join(map(lambda a:str(a),x)),
+                            ", ".join(map(lambda a:str(a),y)),
+                            ", ".join(map(lambda a:str(a),x)),
+                            ", ".join(map(lambda a:str(a),y_ref))
                             )
                 # TODO: what about "Unsat"?
                 

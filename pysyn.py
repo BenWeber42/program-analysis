@@ -552,6 +552,8 @@ class FuncAnalyzer:
         return a z3 condition
         """
         cond = []
+        if data is not None and not isinstance(data, (tuple,list)):
+            data=(data,)
         if len(v) != len(data):
             logging.error("len(v) != len(data)!")
 
@@ -567,6 +569,8 @@ class FuncAnalyzer:
         
         # The number of elements returned may vary. --> increase output variable size on demand
         i = len(self.outVars)
+        if data is not None and not isinstance(data, (tuple,list)):
+            data=(data,)
         while i < len(data):
             self.outVars.append(z3.Int('Out'+str(i)))
             i = i +1
@@ -1011,7 +1015,7 @@ def solve_app(program, tests):
             m = solver.model()
             logging.info("Model :\n"+str(m))
             #varNames = [str(x) for x in fa.inVars]
-            vals = [m[x] for x in fa.inVars]
+            vals = [m[x].as_long() for x in fa.inVars]
             out_vec.append(vals)
         else:
             out_vec.append("Unsat")
