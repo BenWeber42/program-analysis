@@ -9,6 +9,7 @@ from traceback import print_exc
 from sys import argv
 from ast import parse
 from pysyn import *
+from random import random, randint
 
 class Sample(FunctionLoader):
     """
@@ -131,6 +132,21 @@ class SampleTester:
 
             if ref != "Unsat":
                 ref = ast_to_source(ref)
+                
+                f=FunctionExecutor(ast.parse(self.sample.get_source()), 'f', {})
+                f_inv=FunctionExecutor(ast.parse(actual), 'f_inv', {})
+
+                for i in range(1000):                
+                    a=[]
+                    for i in range(len(f.spec.args)):
+                        a.append(randint(-1000,1000));
+                    res=f.call(*a)
+                    if isinstance(res, tuple):
+                        b=f_inv.call(*res)
+                    else:
+                        b=f_inv.call(res)
+                    if list(a)!=list(b):
+                        print("Difference for args: in " +str(a)+" out inv "+str(b))
 
             if actual == ref:
                 return

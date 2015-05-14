@@ -851,7 +851,31 @@ class FuncSynthesizer:
         condProg = []
         if func is None:
             func = self.func
-    
+
+        pathLog = PathLog()
+        func.resetPath()
+        while func.nextPath():
+            extraCondForced=[]
+            inVars=[ z3.Int('InSym'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
+
+            try:
+                (res, path, extraCond) = func.callExt(*inVars)
+            except:
+                continue
+
+            if not pathLog.addPath(path):
+                continue
+            
+            for ec in extraCond:
+                cond=z3.And(z3.Not(path.pathCondition),z3.Not(ec))
+                extraCondForced.append(cond)
+
+            
+            solver=z3.Solver()
+            solver.add(*extraCondForced)
+            if solver.check() == z3.sat:
+                condProg+=extraCondForced
+        
         for t in data:
             func.resetPath()
             pathLog = PathLog()
@@ -1114,11 +1138,12 @@ class AstPrinter:
             out += self.block_to_source(stmt.body)
             self.detent()
 
-            self.emitln("else:")
-
-            self.indent()
-            out += self.block_to_source(stmt.orelse)
-            self.detent()
+            if stmt.orelse:
+                out+=self.emitln("else:")
+    
+                self.indent()
+                out += self.block_to_source(stmt.orelse)
+                self.detent()
 
             return out
         
