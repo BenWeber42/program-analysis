@@ -858,19 +858,30 @@ class FuncSynthesizer:
         func.resetPath()
         while func.nextPath():
             extraCondForced = []
-            inVars = [ z3.Int('InSym'+str(func.choice) + '_' + str(i)) for i in range(len(func.spec.args)) ]
+            inVars = [ z3.Int('InSym_1_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
+            inVars2 = [ z3.Int('InSym_2_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
+            inVars3 = [ z3.Int('InSym_3_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
 
             try:
                 (res, path, extraCond) = func.callExt(*inVars)
+                if not pathLog.addPath(path):
+                    continue
+                (res2, path2, extraCond2) = func.callExt(*inVars2)
+                (res3, path3, extraCond3) = func.callExt(*inVars3)
             except:
                 continue
 
-            if not pathLog.addPath(path):
-                continue
-            
-            for ec in extraCond:
-                cond = z3.And(z3.Not(path.pathCondition),z3.Not(ec))
-                extraCondForced.append(cond)
+            # 3 samples:
+            #     1: sample on how to avoid not(extra cond) (e.g. Div/0)
+            #     2: making sure that the path is reachable (avoid dead code)
+            #     3: makins sure not(extra Cond) can be true at all 
+            for i in range(len(extraCond)):
+                cond = z3.And(z3.Not(path.pathCondition),z3.Not(extraCond[i]))
+                pre = z3.And(path2.pathCondition,z3.Not(extraCond3[i]))
+                # Only if we can reach the path and the extra cond could become an
+                # issue...
+                # Then we need to have a sample to guide the solver away.
+                extraCondForced.append(z3.Implies(pre,cond))
 
             
             solver = z3.Solver()
