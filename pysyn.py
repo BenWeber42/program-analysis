@@ -414,15 +414,16 @@ class FunctionAnalyzer:
             if type(expr.op).__name__ == 'And':
                 real_operands = []
                 for operand in operands:
+
                     operand = self.expression(operand)
+                    real_operands.append(operand)
+
                     if self.quick_check(operand) == z3.unsat:
                         # we could prove that the operand is false
                         # so therefore due to python's short-circuit and operator
                         # the remaining operators don't need to be evaluated
                         # anymore
                         break
-                    else:
-                        real_operands.append(operand)
 
                 return z3.And(*real_operands)
 
@@ -430,7 +431,10 @@ class FunctionAnalyzer:
                 
                 real_operands = []
                 for operand in operands:
+
                     operand = self.expression(operand)
+                    real_operands.append(operand)
+
                     if self.quick_check(z3.Not(operand)) == z3.unsat:
                         # we could prove that the operand cannot be false
                         # thus the operand is always true
@@ -438,8 +442,6 @@ class FunctionAnalyzer:
                         # the remaining operands don't need to be evaluated
                         # anymore
                         break
-                    else:
-                        real_operands.append(operand)
 
                 return z3.Or(*real_operands)
 
@@ -543,7 +545,8 @@ def compile_ast(f):
     assert(f.__class__.__name__ == "FunctionDef")
 
     ast.fix_missing_locations(f)
-    compiled = compile(f, "<pysyn.compile_ast>", "exec")
+    m = ast.Module([f])
+    compiled = compile(m, "<pysyn.compile_ast>", "exec")
 
     scope = {}
     exec compiled in scope

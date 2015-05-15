@@ -31,8 +31,8 @@ class PathDataGenerator:
     
         model = self.solver.model()
 
-        in_vector = [model[x] for x in self.path.input]
-        out_vector = [model[y] for y in self.path.output]
+        in_vector = [model[x].as_long() for x in self.path.input]
+        out_vector = [model[y].as_long() for y in self.path.output]
 
         # make sure we don't generate the same sample twice
         self.solver.add(z3.Not(z3.And(*[ x == model[x] for x in self.path.input])))
@@ -117,6 +117,7 @@ if __name__ == "__main__":
     if len(argv) <= 1:
         print_usage()
     
+    # TODO: generate Unsat samples too
     data = generate(argv[1], n)
 
     for v_in, v_out in data:
