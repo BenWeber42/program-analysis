@@ -76,6 +76,29 @@ def print_usage():
     exit(0)
 
 
+def generate(sample, n):
+
+    f = FunctionLoader(sample).get_f()
+        
+    analyzer = FunctionAnalyzer(f)
+    analyzer.analyze()
+    
+    paths = analyzer.paths
+    
+    if len(paths) == 0:
+        print("Warning: No valid paths were found for sample '%s'!" % sample)
+        return []
+        
+    per_path = int(ceil(float(n)/float(len(paths))))
+    
+    data = []
+    
+    for p in paths:
+        data += PathDataGenerator(p).take(per_path)
+        
+    return data
+
+
 if __name__ == "__main__":
     if "--help" in argv:
         print_usage()
@@ -94,21 +117,7 @@ if __name__ == "__main__":
     if len(argv) <= 1:
         print_usage()
     
-    f = FunctionLoader(argv[1]).get_f()
-        
-    analyzer = FunctionAnalyzer(f)
-    analyzer.analyze()
-    
-    paths = analyzer.paths
-    
-    if len(paths) == 0:
-        print("Warning: No valid paths were found!")
-        exit(-1)
-        
-    per_path = int(ceil(float(n)/float(len(paths))))
-    
-    for p in paths:
-        d = PathDataGenerator(p).take(per_path)
-        
-        for v_in, v_out in d:
-            print(" ".join(map(str, v_out)))
+    data = generate(argv[1], n)
+
+    for v_in, v_out in data:
+        print(" ".join(map(str, v_out)))
