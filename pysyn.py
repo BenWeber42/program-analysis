@@ -540,7 +540,7 @@ class FuncAnalyzer:
             self.inVars.append(z3.Int('In'+str(i)))
 
     def inCond(self):
-        cond=[]
+        cond = []
         for iv in self.inVars:
             cond.append(iv >= -1000)
             cond.append(iv <= 1000)
@@ -1186,11 +1186,12 @@ class AstPrinter:
             return out
 
         if type(expr).__name__ == 'UnaryOp':
+            out = ""
             if type(expr.op).__name__ == 'Not':
                 out = "not "
             if type(expr.op).__name__ == 'USub':
                 out = "-"
-            # FIXME: for the square_root.1.py testcase out isn't initialized here!
+                
             out += "(" + self.expr_to_source(expr.operand) + ")"
             return out
 
