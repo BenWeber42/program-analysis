@@ -145,6 +145,8 @@ class SampleTester:
                         b=f_inv.call(*res)
                     else:
                         b=f_inv.call(res)
+                    if not isinstance(b,tuple):
+                        b=[b]
                     if list(a)!=list(b):
                         print("Difference for args: in " +str(a)+" out inv "+str(b))
 
