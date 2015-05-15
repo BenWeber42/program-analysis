@@ -34,10 +34,11 @@ class FunctionAnalyzer:
         
         # fetch parameters
         self.input = map(lambda p: z3.Int(p.id), f.args.args)
+        self.input_names = set(map(lambda p: p.id, f.args.args))
 
         self.solver = z3.Solver()
         # initialize argument constraint: x in [1000, -1000]
-        self.solver.add(z3.And(*[p >= 1000 for p in self.input]))
+        self.solver.add(z3.And(*[p >= -1000 for p in self.input]))
         self.solver.add(z3.And(*[p <= 1000 for p in self.input]))
 
         # add parameters to store
@@ -60,7 +61,8 @@ class FunctionAnalyzer:
         except GiveUp:
             pass
         except PathRaises:
-            assert((self.solver.assertions()) == 0)
+            # must contain only the starting assumptions x in [-1000, 1000]
+            assert(len(list(self.solver.assertions())) == 2)
             self.is_irreversible = True
 
 
@@ -73,14 +75,32 @@ class FunctionAnalyzer:
 
     def update_reachable(self):
         self.reachable = self.solver.check()
+        
+    
+    def quick_check(self, *constraints):
+        self.solver.push()
+        self.solver.add(constraints)
+        result = self.solver.check()
+        self.solver.pop()
+        return result
 
 
     def block(self, block):
         if len(block) > 0:
             self.statement(block[0], block[1:])
         else:
-            # path that doesn't end with a return statement!
-            raise Exception("Function is not part of the valid python subset due to a missing return!")
+            if self.reachable == z3.sat:
+                # path that doesn't end with a return statement!
+                raise Exception("Function is not part of the valid python subset due to a missing return!")
+            elif self.reachable == z3.unknown:
+                # if we don't know whether a path is reachable
+                # but it doesn't end with a return statement, we will assume
+                # that it's not reachable, because it's clearly specified
+                # that we're working with a python subset where every path
+                # contains at least one return statement.
+                pass
+            else:
+                assert(False)
     
 
     def statement(self, stmt, block):
@@ -103,17 +123,32 @@ class FunctionAnalyzer:
         expr = self.expression(_return.value)
         
         if isinstance(expr, tuple):
-            self.check_return_size(len(tuple))
+            self.check_return_size(len(expr))
+            output = list(expr)
         else:
             self.check_return_size(1)
+            output = [expr]
+            
+        relation = []
+        outvariables = []
 
-        # TODO: create path
+        for i in xrange(len(output)):
+            
+            outname = "y" + str(i + 1)
+            
+            # avoid collisions with existing variables
+            while outname in self.input_names:
+                outname = "__" + outname
     
+            outvariable = z3.Int(outname)
+            outvariables.append(outvariable)
+            relation.append(outvariable == output[i])
+        
+        path = Path(self.input, outvariables, self.solver.assertions(), relation)
+        self.paths.append(path)
 
     def _if(self, _if, block):
         
-        # TODO: handle PathRaises
-
         # create check point
         self.solver.push()
         store = self.store.copy()
@@ -126,36 +161,44 @@ class FunctionAnalyzer:
         self.solver.add(test)
         self.update_reachable()
         
+        # explore true branch
         if self.reachable == z3.sat or self.reachable == z3.unknown:
-            # explore true branch
             self.explore_path(_if.body + block)
             
         # reset back to checkpoint
         self.solver.pop()
         self.store = store
         self.reachable = reachable
-        
-        # handle false branch
-        if not _if.orelse:
-            self.explore_path(block)
-            return
 
+        # handle false branch
+        self.solver.push()
         self.solver.add(z3.Not(test))
         self.update_reachable()
         
+        # explore false branch
         if self.reachable == z3.sat or self.reachable == z3.unknown:
-            # explore false branch
-            self.explore_path(_if.orelse + block)
+
+            if not _if.orelse:
+                self.explore_path(block)
+            else:
+                self.explore_path(_if.orelse + block)
     
         self.solver.pop()
     
+
     def explore_path(self, block):
         try:
             self.block(block)
         except PathRaises:
-            # TODO: handle problems
+            self.irreversible_path_constraints.append(list(self.solver.assertions()))
             if self.reachable == z3.sat:
-                pass
+                self.is_irreversible = True
+                if self.give_up_on_irreversible_path:
+                    raise GiveUp()
+            elif self.reachable == z3.unknown:
+                self.migh_be_irreversible = True
+            else:
+                assert(False)
 
 
     def _assign(self, assign, block):
@@ -172,7 +215,7 @@ class FunctionAnalyzer:
                 # unequal size of tuples!
                 raise PathRaises()
 
-            for t, v in zip(value, target):
+            for v, t in zip(value, target):
                 self.store[t] = v
             
         elif not target_is_tuple and not target_is_tuple:
@@ -222,57 +265,110 @@ class FunctionAnalyzer:
             if type(expr.op).__name__ == 'Mult':
                 return left*right
             if type(expr.op).__name__ == 'Div':
-
-                # check for division by zero
-                division_by_zero = self.solver.check(right == 0)
                 
-                # TODO: implement
-                if division_by_zero == z3.sat:
-                    pass
-                elif division_by_zero == z3.unknown:
-                    pass
-                else:
-                    pass
+                # for some reasons it seems that add with check seems to produce
+                # better results than check with assumptions
 
-                return left/right
+                # can x be non-zero?
+                non_zero = self.quick_check(right != 0)
+                if non_zero == z3.sat or non_zero == z3.unknown:
+                    
+                    # check for division by zero
+                    division_by_zero = self.quick_check(right == 0)
+                    
+                    # handle potential division by zero
+                    if division_by_zero == z3.sat:
+                        constraint = list(self.solver.assertions())
+                        constraint.append(right == 0)
+                        self.irreversible_path_constraints.append(constraint)
+    
+                        self.is_irreversible = True
+                        if self.give_up_on_irreversible_path:
+                            raise GiveUp()
+    
+                    elif division_by_zero == z3.unknown:
+                        constraint = list(self.solver.assertions())
+                        constraint.append(right == 0)
+                        self.irreversible_path_constraints.append(constraint)
+    
+                        self.migh_be_irreversible = True
+    
+                    else:
+                        # x can't be 0, so everything's good
+                        pass
+
+                    # continue with assumption that x != 0
+                    self.solver.add(right != 0)
+                    self.reachable = non_zero
+                    
+                    return left/right
+
+                else:
+                    # x can't be non-zero
+                    raise PathRaises
 
         if type(expr).__name__ == 'UnaryOp':
+            operand = self.expression(expr.operand)
             if type(expr.op).__name__ == 'Not':
-                out = "not "
+                return z3.Not(operand)
             if type(expr.op).__name__ == 'USub':
-                out = "-"
-            out += "(" + self.expression(expr.operand) + ")"
-            return out
+                return -operand
 
         if type(expr).__name__ == 'Compare':
             assert(len(expr.ops) == 1)  # Do not allow for x == y == 0 syntax
             assert(len(expr.comparators) == 1)
-
-            out = "(" + self.expression(expr.left) + ")"
+            
+            left = self.expression(expr.left)
+            right = self.expression(expr.comparators[0])
 
             op = expr.ops[0]
             if type(op).__name__ == 'Eq':
-                out += " == "
+                return left == right
             if type(op).__name__ == 'NotEq':
-                out += " != "
+                return left != right
             if type(op).__name__ == 'Gt':
-                out += " > "
+                return left > right
             if type(op).__name__ == 'GtE':
-                out += " >= "
+                return left >= right
             if type(op).__name__ == 'Lt':
-                out += " < "
+                return left < right
             if type(op).__name__ == 'LtE':
-                out += " <= "
-
-            out += "(" + self.expression(expr.comparators[0]) + ")"
-            return out
+                return left <= right
 
         if type(expr).__name__ == 'BoolOp':
-            operands = map(lambda expr: "(" + self.expression(expr) + ")", expr.values)
+            operands = expr.values
+
             if type(expr.op).__name__ == 'And':
-                return " and ".join(operands)
+                real_operands = []
+                for operand in operands:
+                    operand = self.expression(operand)
+                    if self.quick_check(operand) == z3.unsat:
+                        # we could prove that the operand is false
+                        # so therefore due to python's short-circuit and operator
+                        # the remaining operators don't need to be evaluated
+                        # anymore
+                        break
+                    else:
+                        real_operands.append(operand)
+
+                return z3.And(*real_operands)
+
             if type(expr.op).__name__ == 'Or':
-                return " or ".join(operands)
+                
+                real_operands = []
+                for operand in operands:
+                    operand = self.expression(operand)
+                    if self.quick_check(z3.Not(operand)) == z3.unsat:
+                        # we could prove that the operand cannot be false
+                        # thus the operand is always true
+                        # so therefore with python's short-circuit or operator
+                        # the remaining operands don't need to be evaluated
+                        # anymore
+                        break
+                    else:
+                        real_operands.append(operand)
+
+                return z3.Or(*real_operands)
 
         raise Exception('Invalid expression: ' + ast.dump(expr))
 
@@ -286,7 +382,6 @@ class Path:
     def __init__(self, input, output, constraints, relation):
         assert isinstance(input, list)
         assert isinstance(output, list)
-        assert isinstance(constraints, list)
         assert isinstance(relation, list)
 
         self.input = input
@@ -304,4 +399,15 @@ if __name__ == "__main__":
         print("            for a python function 'f' in [file].")
     
     else:
+        print("Analyzing file '%s'" % argv[1])
+
         f = FunctionLoader(argv[1]).get_f()
+        
+        analyzer = FunctionAnalyzer(f)
+        analyzer.analyze()
+        
+        print("Found %s path(s)" % len(analyzer.paths))
+        if analyzer.is_irreversible:
+            print(" - is irreversible")
+        elif analyzer.migh_be_irreversible:
+            print(" - might be irreversible")
