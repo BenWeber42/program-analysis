@@ -313,6 +313,8 @@ class FunctionAnalyzer:
                 return z3.Not(operand)
             if type(expr.op).__name__ == 'USub':
                 return -operand
+            if type(expr.op).__name__ == 'UAdd':
+                return operand
 
         if type(expr).__name__ == 'Compare':
             assert(len(expr.ops) == 1)  # Do not allow for x == y == 0 syntax
