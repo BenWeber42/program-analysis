@@ -3,13 +3,13 @@
 Carries out several tests involving sample programs.
 """
 
-from os import path
+from signal import signal, SIGSEGV
 from glob import glob
-from traceback import print_exc
+from traceback import print_exc, print_stack
 from sys import argv
 from ast import parse
 from pysyn import *
-from random import random, randint
+from random import randint
 
 class Sample(FunctionLoader):
     """
@@ -96,11 +96,11 @@ class SampleTester:
             print_exc()
         else:
             # verify:
-            f= FunctionExecutor(self.sample.get_ast(), 'f')
+            f = FunctionExecutor(self.sample.get_ast(), 'f')
             
             for x, y in zip(xs, indata_v):
                 if y != "Unsat":
-                    y_ref=f.call(*x)
+                    y_ref = f.call(*x)
                     if y_ref is None:
                         y_ref=[]
                     elif not isinstance(y_ref,(tuple,list)):
@@ -109,10 +109,10 @@ class SampleTester:
                         y_ref = list(y_ref)
                     if y_ref != y:
                         print "Incorrectly solved f(%s) = (%s) because f(%s) = (%s)!" % (
-                            ", ".join(map(lambda a:str(a),x)),
-                            ", ".join(map(lambda a:str(a),y)),
-                            ", ".join(map(lambda a:str(a),x)),
-                            ", ".join(map(lambda a:str(a),y_ref))
+                            ", ".join(map(str, x)),
+                            ", ".join(map(str, y)),
+                            ", ".join(map(str, x)),
+                            ", ".join(map(str, y_ref))
                             )
                 # TODO: what about "Unsat"?
                 
@@ -133,22 +133,28 @@ class SampleTester:
             if ref != "Unsat":
                 ref = ast_to_source(ref)
                 
-                f=FunctionExecutor(ast.parse(self.sample.get_source()), 'f', {})
-                f_inv=FunctionExecutor(ast.parse(actual), 'f_inv', {})
+                if actual != "Unsat":
+                    f = FunctionExecutor(ast.parse(self.sample.get_source()), 'f', {})
+                    f_inv = FunctionExecutor(ast.parse(actual), 'f_inv', {})
 
-                for i in range(1000):                
-                    a=[]
-                    for i in range(len(f.spec.args)):
-                        a.append(randint(-1000,1000));
-                    res=f.call(*a)
-                    if isinstance(res, tuple):
-                        b=f_inv.call(*res)
-                    else:
-                        b=f_inv.call(res)
-                    if not isinstance(b,tuple):
-                        b=[b]
-                    if list(a)!=list(b):
-                        print("Difference for args: in " +str(a)+" out inv "+str(b))
+                    for i in range(1000):                
+                        a = []
+                        for i in range(len(f.spec.args)):
+                            a.append(randint(-1000, 1000));
+                        res = f.call(*a)
+                        if isinstance(res, tuple):
+                            b = f_inv.call(*res)
+                        else:
+                            b = f_inv.call(res)
+                    
+                        if isinstance(b, tuple):
+                            b = list(b)
+                        else:
+                            b = [b]
+
+                        if a != b:
+                            print("Difference for args: in " + str(a) + " out inv " + str(b))
+                            break
 
             if actual == ref:
                 return
@@ -161,8 +167,20 @@ class SampleTester:
             print(actual)
             print("")
 
+def segfault_handler(signum, frame):
+    print("Segfault!!!")
+
+    if frame != None:
+        print_stack(frame)
+    else:
+        print("frame == None")
+
+    exit()
         
 if __name__ == "__main__":
+    
+    #signal(SIGSEGV, segfault_handler)
+
     # ugly hack to collect .py files in sub directories
     if "--help" in argv:
         print("Usage: %s [--help] [--syn] [--solve] [list of test files]" % argv[0])
@@ -202,7 +220,7 @@ if __name__ == "__main__":
         # ignore reference solutions
         if f.endswith("ref.py"):
             continue
-        test = SampleTester(Sample(f))
         print(">>> Running testcase '%s'" % f)
+        test = SampleTester(Sample(f))
         test.run(syn, solve)
         print("")

@@ -506,6 +506,7 @@ class ResultIteratingSolver:
             self.solver.ctx.interrupt()
                     
         timer=threading.Timer(ABORT_TIMEOUT,abortSolving)
+        # this causes many threads to be started wich may cause severe slow downs
         timer.start()
         if not self.solver.check() == z3.sat:
             timer.cancel()
@@ -541,9 +542,10 @@ class FuncAnalyzer:
     def inCond(self):
         cond=[]
         for iv in self.inVars:
-            cond.append(iv>=-1000)
-            cond.append(iv<=1000)
+            cond.append(iv >= -1000)
+            cond.append(iv <= 1000)
         return cond
+
     def matchVars(self, v, data):
         """
         Utility function to generate a z3 condition for a list
@@ -599,7 +601,7 @@ class FuncAnalyzer:
             
             condRv = self.matchOut(res)
             condPath = path.pathCondition
-            condProg+=self.inCond()
+            condProg += self.inCond()
             condProg.append(z3.Implies(condPath, condRv))
             condProg.append(z3.Implies(condPath, z3.And( *extraCond)))
             
@@ -659,7 +661,7 @@ class FuncAnalyzer:
             for iv in self.inVars:
                 varHack.append(iv == z3.Int('tmp_'+str(iv)))
                 
-            varHack+=self.inCond()
+            varHack += self.inCond()
             condPath = z3.And(condPath, *varHack)
 
             solver.add(condPath)
@@ -855,10 +857,10 @@ class FuncSynthesizer:
         pathLog = PathLog()
         func.resetPath()
         while func.nextPath():
-            extraCondForced=[]
-            inVars=[ z3.Int('InSym_1_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
-            inVars2=[ z3.Int('InSym_2_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
-            inVars3=[ z3.Int('InSym_3_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
+            extraCondForced = []
+            inVars = [ z3.Int('InSym_1_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
+            inVars2 = [ z3.Int('InSym_2_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
+            inVars3 = [ z3.Int('InSym_3_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
 
             try:
                 (res, path, extraCond) = func.callExt(*inVars)
@@ -874,18 +876,18 @@ class FuncSynthesizer:
             #     2: making sure that the path is reachable (avoid dead code)
             #     3: makins sure not(extra Cond) can be true at all 
             for i in range(len(extraCond)):
-                cond=z3.And(z3.Not(path.pathCondition),z3.Not(extraCond[i]))
-                pre=z3.And(path2.pathCondition,z3.Not(extraCond3[i]))
+                cond = z3.And(z3.Not(path.pathCondition),z3.Not(extraCond[i]))
+                pre = z3.And(path2.pathCondition,z3.Not(extraCond3[i]))
                 # Only if we can reach the path and the extra cond could become an
                 # issue...
                 # Then we need to have a sample to guide the solver away.
                 extraCondForced.append(z3.Implies(pre,cond))
 
             
-            solver=z3.Solver()
+            solver = z3.Solver()
             solver.add(*extraCondForced)
             if solver.check() == z3.sat:
-                condProg+=extraCondForced
+                condProg += extraCondForced
         
         for t in data:
             func.resetPath()
@@ -994,7 +996,7 @@ class FuncSynthesizer:
         solution = []
         i = 0
         fd2 = []
-        while i <len(fd):
+        while i < len(fd):
             fd2.append(fd[i])
             i += k
         
@@ -1150,7 +1152,7 @@ class AstPrinter:
             self.detent()
 
             if stmt.orelse:
-                out+=self.emitln("else:")
+                out += self.emitln("else:")
     
                 self.indent()
                 out += self.block_to_source(stmt.orelse)
@@ -1199,6 +1201,7 @@ class AstPrinter:
                 out = "not "
             if type(expr.op).__name__ == 'USub':
                 out = "-"
+            # FIXME: for the square_root.1.py testcase out isn't initialized here!
             out += "(" + self.expr_to_source(expr.operand) + ")"
             return out
 

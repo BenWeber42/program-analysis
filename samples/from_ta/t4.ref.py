@@ -1,3 +1,5 @@
+# proven correct by brute-force
+
 def f_inv(x):
     if x > 0:
         return x / 3

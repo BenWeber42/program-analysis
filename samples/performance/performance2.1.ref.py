@@ -11,6 +11,6 @@ def f_inv(y1, y2, y3, y4):
         return x1, x2, x3
     else:
         x2 = y3/y1
-        x1 = y2/x2
+        x1 = y2/x2 + 0
         x3 = y1/x1
         return x1, x2, x3

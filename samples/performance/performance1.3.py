@@ -1,6 +1,8 @@
 # this example tries to measure how well the solution deals with synthesization
 # and solving
 
+# proven correct by brute-force (yes, that took around 1h)
+
 def f(x1, x2, x3):
     if x1 >= 0:
         return x1, x2 + x3, x2 + x1 + 30
