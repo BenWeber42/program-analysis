@@ -949,9 +949,9 @@ class FuncAnalyzer:
         if data is not None and not isinstance(data, (tuple,list)):
             data=(data,)
         if len(v) != len(data):
+            # TODO: fix this for testcase 'solve' ./samples/zero_division/zero_div_guard.py
             logging.error("len(v) != len(data)!")
 
-        # TODO: fix error, sometimes len(v) != len(data)!
         for i in range(0, min(len(v), len(data))):
             cond.append(v[i] == data[i])
         return z3.And(*cond)
@@ -1454,16 +1454,19 @@ def solve_app(program, tests):
 
 
 def syn_app(program):
+
     tree = ast.parse(program)
-    
-    funcAnalyzer = FuncAnalyzer(tree, 'f')
-    origfunc = FunctionExecutor(tree, 'f')
+
     setMulti = 32
     if WITH_HYPO:
         setMulti = 16
+    
+    funcAnalyzer = FuncAnalyzer(tree, 'f')
+    origfunc = FunctionExecutor(tree, 'f')
+    funcSynth = FuncSynthesizer(tree, 'f_inv')
+
     trainingData = funcAnalyzer.genInput(setMulti)
     trainingData = origfunc.genData(trainingData)
-    funcSynth = FuncSynthesizer(tree, 'f_inv')
     trainingData = funcSynth.reverseData(trainingData)
     logging.debug(trainingData)
     
@@ -1530,8 +1533,6 @@ class AstPrinter:
     
     def stmt_to_source(self, stmt):
         
-        # TODO: unknowns
-
         if type(stmt).__name__ == 'Return':
             return self.emitln("return " + self.expr_to_source(stmt.value))
 
@@ -1561,8 +1562,6 @@ class AstPrinter:
     
     def expr_to_source(self, expr):
         
-        # TODO: unknowns
-
         if type(expr).__name__ == 'Tuple':
             members = map(lambda expr: self.expr_to_source(expr), expr.elts)
             return ", ".join(members)

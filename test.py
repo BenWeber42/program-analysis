@@ -73,6 +73,32 @@ class Sample(FunctionLoader):
             if FunctionLoader.is_template(node):
                 return node
 
+
+def generate(f, num_args):
+    
+    assert(1 <= num_args and num_args <= 2)
+    
+    ys = set()
+    for x1 in xrange(-1000, 1001):
+        if num_args == 1:
+            try:
+                y = f(x1)
+            except:
+                pass
+            else:
+                ys.add(y)
+        else:
+            for x2 in xrange(-1000, 1001):
+                try:
+                    y = f((x1, x2))
+                except:
+                    pass
+                else:
+                    ys.add(y)
+    
+    return ys
+
+
 class SampleTester:
     
     def __init__(self, sample):
@@ -98,10 +124,25 @@ class SampleTester:
             # verify:
             f = compile_ast(self.sample.get_f())
             
+            if len(self.sample.get_f().args.args) <= 2:
+                # for such a small parameter space it's ok to use a brute-force approach
+                valid_y = generate(f, len(self.sample.get_f().args.args))
+            else:
+                # TODO: find a good way to check 'Unsat' for bigger parameter space
+                valid_y = set()
+            
             for x, y in zip(xs, ys):
                 if x != "Unsat":
 
-                    y_actual = f(*x)
+                    try:
+                        y_actual = f(*x)
+                    except:
+                        print "Incorrectly solved f(%s) = (%s) because f(%s) raises an exception!" % (
+                            ", ".join(map(str, x)),
+                            ", ".join(map(str, y)),
+                            ", ".join(map(str, x))
+                            )
+                        break
 
                     if isinstance(y_actual, tuple):
                         y_actual = list(y_actual)
@@ -115,8 +156,17 @@ class SampleTester:
                             ", ".join(map(str, x)),
                             ", ".join(map(str, y_actual))
                             )
-                # TODO: what about "Unsat"?
-                
+                        break
+                else:
+                    if isinstance(y, list):
+                        y = tuple(y)
+
+                    if y in valid_y:
+                        print("Incorrectly yiled 'Unsat' because (%s) is part of f's output!" %
+                              ", ".join(map(str, y)))
+                        break
+
+
     def run_syn(self):
         try:
             actual = syn_app(self.sample.get_source())
