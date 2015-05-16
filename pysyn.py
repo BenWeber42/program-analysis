@@ -681,7 +681,7 @@ class InstrumentedExecutor(FunctionExecutor):
         self.tree = copy.deepcopy(astTree)
         vv = InstrumentingVisitor()
         self.visitor = vv
-        vv.visit(find_function(self.tree,fname))
+        vv.visit(find_function(self.tree, fname))
         
         # Pass the cond_context down to parent class so the instrumented ast tree will compile
         FunctionExecutor.__init__(self, self.tree, fname, {"cond_context":self})
@@ -691,7 +691,7 @@ class InstrumentedExecutor(FunctionExecutor):
         #   nextPath() always increments choice, therefore walking through all branches
         self.choice = -1
         # where to stop iterating with next Path... set to the first unused bit (i.e. 1 bit above the biggest branch ref id)
-        self.maxChoice = 1 <<vv.refLength
+        self.maxChoice = 1 << vv.refLength
         # Only enable during call()
         self._currentPath = None
         self._extraCond = None
@@ -711,7 +711,7 @@ class InstrumentedExecutor(FunctionExecutor):
             raise "can only call after first use of nextPath()"
         self._currentPath = ExecutionPath()
         self._extraCond = []
-        res=None
+        res = None
         try:
             res = FunctionExecutor.call(self, *args)
         finally:
@@ -1488,32 +1488,61 @@ class FuncSynthesizer:
         return rv
 
 
-def solve_app(program, tests):
-    p = ast.parse(program)
-    logging.debug("AST Tree of read file:\n"+ast.dump(p))
+def solve_app(f_ast, ys):
     
-    fa = FuncAnalyzer(p)
+    analyzer = FunctionAnalyzer(f_ast)
+    analyzer.analyze()
     
+    if len(analyzer.paths) == 0:
+        # no valid paths -> all 'Unsat'
+        
+        return [['Unsat']]*len(ys)
+    
+    # prepare solver
     solver = z3.Solver()
-    conds = fa.calcForward()
-    out_vec = []
+    
+    ors = []
+    for path in analyzer.paths:
+        ors.append(z3.And(
+            z3.And(*path.constraints),
+            z3.And(*path.relation)
+            ))
+    
+    solver.add(z3.Or(ors))
+    
+    solver.push()
+    
+    num_constraints = len(list(solver.assertions()))
+    
+    xs = []
+    for y in ys:
 
-    for outdata in tests:
-        solver.reset()
-        solver.add(*conds)
-        solver.add(fa.matchOut(outdata))
+        if len(y) != len(analyzer.output):
+            xs.append(['Unsat'])
+            continue
+        
+        for i in xrange(len(y)):
+            solver.add(analyzer.output[i] == y[i])
+            
+        if solver.check() == z3.sat:
+            
+            model = solver.model()
+            
+            x = [model[in_var].as_long() for in_var in analyzer.input]
+            
+            if None in x:
+                xs.append(['Unsat'])
+            else:
+                xs.append(x)
 
-        logging.info("Conditions for Solver:\n"+str(solver.assertions()))
-        if(solver.check() == z3.sat):
-            m = solver.model()
-            logging.info("Model :\n"+str(m))
-            #varNames = [str(x) for x in fa.inVars]
-            vals = [m[x].as_long() for x in fa.inVars]
-            out_vec.append(vals)
         else:
-            out_vec.append("Unsat")
-
-    return out_vec
+        
+            xs.append(['Unsat'])
+        
+        solver.pop()
+        solver.push()
+    
+    return xs
 
 
 def generate_training_data_for_synthesizer(paths, k):
@@ -1897,8 +1926,8 @@ Usage:
 def main_eval(source, data):
     eval_app(source, data)
 
-def main_solve(source, data):
-    out_vec = solve_app(source, parse_vectors(data))
+def main_solve(source_file, test_file):
+    out_vec = solve_app(FunctionLoader(source_file).get_f(), load_vectors(test_file))
     for out in out_vec:
         print " ".join(map(str, out))
 
@@ -1912,7 +1941,7 @@ if __name__ == '__main__':
     if sys.argv[1] == 'eval':
         main_eval(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
     elif sys.argv[1] == 'solve':
-        main_solve(read_file_to_string(sys.argv[2]), read_file_to_string(sys.argv[3]))
+        main_solve(sys.argv[2], sys.argv[3])
     elif sys.argv[1] == 'syn':
         main_syn(read_file_to_string(sys.argv[2]))
     else:

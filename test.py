@@ -116,11 +116,15 @@ class SampleTester:
         ys = load_vectors(self.sample.get_output())
 
         try:
-            xs = solve_app(self.sample.get_source(), ys)
+            xs = solve_app(self.sample.get_f(), ys)
         except:
             print("Command solve failed on sample '%s'!" % self.sample.path)
             print_exc()
         else:
+
+            if len(xs) != len(ys):
+                print("Solve didn't output enough input data!")
+
             # verify:
             f = compile_ast(self.sample.get_f())
             
@@ -130,9 +134,9 @@ class SampleTester:
             else:
                 # TODO: find a good way to check 'Unsat' for bigger parameter space
                 valid_y = set()
-            
+
             for x, y in zip(xs, ys):
-                if x != "Unsat":
+                if x != ["Unsat"]:
 
                     try:
                         y_actual = f(*x)
@@ -163,8 +167,8 @@ class SampleTester:
                         y = tuple(y)
 
                     if y in valid_y:
-                        # TODO: that's not correct
-                        # but we don't have any samples where this matters
+                        # Note: We just need to find any x such that f(x) = y
+                        # so it's not a problem if there exists x1 != x1 with f(x1) = f(x2) = y
                         print("Incorrectly yielded 'Unsat' because (%s) is part of f's output space!" %
                               ", ".join(map(str, y)))
                         break
@@ -221,6 +225,7 @@ class SampleTester:
             print(actual)
             print("")
 
+
 def segfault_handler(signum, frame):
     print("Segfault!!!")
 
@@ -267,6 +272,10 @@ if __name__ == "__main__":
         tests += glob("./samples/*/*.py")
         tests += glob("./samples/*/*/*.py")
         tests += glob("./samples/*/*/*/*.py")
+        tests += glob("./samples_expensive/*.py")
+        tests += glob("./samples_expensive/*/*.py")
+        tests += glob("./samples_expensive/*/*/*.py")
+        tests += glob("./samples_expensive/*/*/*/*.py")
     else:
         tests = argv[1:]
 
