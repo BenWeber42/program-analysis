@@ -130,13 +130,9 @@ class FunctionAnalyzer:
         self.give_up_on_irreversible_path = give_up_on_irreversible_path
 
         try:
-            self.block(self.f.body)
+            self.explore_path(self.f.body)
         except GiveUp:
             pass
-        except PathRaises:
-            # must contain only the starting assumptions x in [-1000, 1000]
-            assert(len(list(self.solver.assertions())) == 2)
-            self.is_irreversible = True
 
 
     def check_return_size(self, size):
@@ -418,7 +414,6 @@ class FunctionAnalyzer:
         if type(expr).__name__ == 'BoolOp':
             operands = expr.values
 
-            # TODO: fix bugs from samples/operators/associative_short_circuit{1,2}.py samples
             if type(expr.op).__name__ == 'And':
                 real_operands = []
                 for operand in operands:
@@ -426,8 +421,8 @@ class FunctionAnalyzer:
                     operand = self.expression(operand)
                     real_operands.append(operand)
 
-                    if self.quick_check(operand) == z3.unsat:
-                        # we could prove that the operand is false
+                    if self.quick_check(*real_operands) == z3.unsat:
+                        # we could prove that the operands are false
                         # so therefore due to python's short-circuit and operator
                         # the remaining operands don't need to be evaluated
                         # anymore
@@ -443,9 +438,9 @@ class FunctionAnalyzer:
                     operand = self.expression(operand)
                     real_operands.append(operand)
 
-                    if self.quick_check(z3.Not(operand)) == z3.unsat:
-                        # we could prove that the operand cannot be false
-                        # thus the operand is always true
+                    if self.quick_check(z3.Not(z3.Or(*real_operands))) == z3.unsat:
+                        # we could prove that the operands cannot be false
+                        # thus the operands are always true
                         # so therefore with python's short-circuit or operator
                         # the remaining operands don't need to be evaluated
                         # anymore
