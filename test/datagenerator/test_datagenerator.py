@@ -28,6 +28,11 @@ class TestCorrectRelation(unittest.TestCase):
     samples += glob("../../samples/*/*/*.py")
     samples += glob("../../samples/*/*/*/*.py")
     
+    samples += glob("../../samples_expensive/*.py")
+    samples += glob("../../samples_expensive/*/*.py")
+    samples += glob("../../samples_expensive/*/*/*.py")
+    samples += glob("../../samples_expensive/*/*/*/*.py")
+
     @execute_for_all(samples)
     def testCorrectRelation(self, sample):
         

@@ -65,7 +65,7 @@ class Sample(FunctionLoader):
         return self.reference_source
 
     def get_reference(self):
-        if self.get_reference_source() == "Unsat":
+        if self.get_reference_source().replace("\n", "") == "Unsat":
             return "Unsat"
         if self.reference_ast == None:
             self.reference_ast = parse(self.get_reference_source())

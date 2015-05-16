@@ -106,6 +106,8 @@ class FunctionAnalyzer:
         # fetch parameters
         self.input = map(lambda p: z3.Int(p.id), f.args.args)
         self.input_names = set(map(lambda p: p.id, f.args.args))
+        
+        self.output = None
 
         self.solver = z3.Solver()
         # initialize argument constraint: x in [1000, -1000]
@@ -201,21 +203,26 @@ class FunctionAnalyzer:
             output = [expr]
             
         relation = []
-        outvariables = []
-
-        for i in xrange(len(output)):
-            
-            outname = "y" + str(i + 1)
-            
-            # avoid collisions with existing variables
-            while outname in self.input_names:
-                outname = "__" + outname
-    
-            outvariable = z3.Int(outname)
-            outvariables.append(outvariable)
-            relation.append(outvariable == output[i])
         
-        path = Path(self.input, outvariables, self.solver.assertions(), relation)
+        # initialize output variables if necessary
+        if self.output == None:
+            
+            self.output = []
+            
+            for i in xrange(len(output)):
+                outname = "y" + str(i + 1)
+            
+                # avoid collisions with existing variables
+                while outname in self.input_names:
+                    outname = "__" + outname
+    
+                outvariable = z3.Int(outname)
+                self.output.append(outvariable)
+            
+        for i in xrange(len(output)):
+            relation.append(self.output[i] == output[i])
+        
+        path = Path(self.input, self.output, self.solver.assertions(), relation)
         self.paths.append(path)
 
     def _if(self, _if, block):
@@ -411,6 +418,7 @@ class FunctionAnalyzer:
         if type(expr).__name__ == 'BoolOp':
             operands = expr.values
 
+            # TODO: fix bugs from samples/operators/associative_short_circuit{1,2}.py samples
             if type(expr.op).__name__ == 'And':
                 real_operands = []
                 for operand in operands:
@@ -421,7 +429,7 @@ class FunctionAnalyzer:
                     if self.quick_check(operand) == z3.unsat:
                         # we could prove that the operand is false
                         # so therefore due to python's short-circuit and operator
-                        # the remaining operators don't need to be evaluated
+                        # the remaining operands don't need to be evaluated
                         # anymore
                         break
 

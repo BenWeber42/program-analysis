@@ -76,7 +76,7 @@ def print_usage():
     exit(0)
 
 
-def generate(sample, n):
+def generate(sample, n, at_least_one_per_path = True):
 
     f = FunctionLoader(sample).get_f()
         
@@ -90,11 +90,16 @@ def generate(sample, n):
         return []
         
     per_path = int(ceil(float(n)/float(len(paths))))
+    if at_least_one_per_path:
+        per_path = max(per_path, 1)
     
     data = []
     
     for p in paths:
         data += PathDataGenerator(p).take(per_path)
+
+    # TODO: generate Unsat samples too
+	# Unfortunately that's not so straight forward
         
     return data
 
@@ -117,7 +122,6 @@ if __name__ == "__main__":
     if len(argv) <= 1:
         print_usage()
     
-    # TODO: generate Unsat samples too
     data = generate(argv[1], n)
 
     for v_in, v_out in data:
