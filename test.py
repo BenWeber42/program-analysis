@@ -86,33 +86,34 @@ class SampleTester:
 
 
     def run_solve(self):
-        ys = self.sample.get_output()
+
+        ys = load_vectors(self.sample.get_output())
+
         try:
-            indata=read_file_to_string(ys)
-            indata_v=parse_vectors(indata)
-            xs = solve_app(self.sample.get_source(), indata_v)
+            xs = solve_app(self.sample.get_source(), ys)
         except:
             print("Command solve failed on sample '%s'!" % self.sample.path)
             print_exc()
         else:
             # verify:
-            f = FunctionExecutor(self.sample.get_ast(), 'f')
+            f = compile_ast(self.sample.get_f())
             
-            for x, y in zip(xs, indata_v):
-                if y != "Unsat":
-                    y_ref = f.call(*x)
-                    if y_ref is None:
-                        y_ref=[]
-                    elif not isinstance(y_ref,(tuple,list)):
-                        y_ref=[y_ref]
+            for x, y in zip(xs, ys):
+                if x != "Unsat":
+
+                    y_actual = f(*x)
+
+                    if isinstance(y_actual, tuple):
+                        y_actual = list(y_actual)
                     else:
-                        y_ref = list(y_ref)
-                    if y_ref != y:
+                        y_actual = [y_actual]
+
+                    if y_actual != y:
                         print "Incorrectly solved f(%s) = (%s) because f(%s) = (%s)!" % (
                             ", ".join(map(str, x)),
                             ", ".join(map(str, y)),
                             ", ".join(map(str, x)),
-                            ", ".join(map(str, y_ref))
+                            ", ".join(map(str, y_actual))
                             )
                 # TODO: what about "Unsat"?
                 
