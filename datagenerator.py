@@ -1,65 +1,9 @@
 #!/usr/bin/env python
 
 from sys import argv
-from pysyn import FunctionLoader, FunctionAnalyzer, Path
+from pysyn import FunctionLoader, FunctionAnalyzer, PathDataGenerator
 from math import ceil
 import z3
-
-
-class PathDataGenerator:
-    
-    """
-    Generates input/output samples for a given path
-    """
-    
-    def __init__(self, path):
-        self.path = path
-
-        self.solver = z3.Solver()
-        self.solver.add(path.constraints)
-        self.solver.add(path.relation)
-        self.solver.push()
-        
-        self.stack_size = 0
-    
-    
-    def another(self):
-        
-        sat = self.solver.check()
-        if sat != z3.sat:
-            return None
-    
-        model = self.solver.model()
-
-        in_vector = [model[x].as_long() for x in self.path.input]
-        out_vector = [model[y].as_long() for y in self.path.output]
-
-        # make sure we don't generate the same sample twice
-        self.solver.add(z3.Not(z3.And(*[ x == model[x] for x in self.path.input])))
-        self.solver.add(z3.Not(z3.And(*[ y == model[y] for y in self.path.output])))
-
-        self.solver.push()
-        self.stack_size += 1
-        
-        return (in_vector, out_vector)
-
-    
-    def take(self, num):
-        v = []
-        for i in xrange(num):
-            d = self.another()
-
-            if d == None:
-                return v
-
-            v.append(d)
-
-        return v
-    
-    def reset(self):
-        while self.stack_size > 0:
-            self.solver.pop()
-            self.stack_size -= 1
 
 
 def print_usage():

@@ -468,6 +468,62 @@ class Path:
         self.relation = relation
 
 
+class PathDataGenerator:
+    
+    """
+    Generates input/output samples for a given path
+    """
+    
+    def __init__(self, path):
+        self.path = path
+
+        self.solver = z3.Solver()
+        self.solver.add(path.constraints)
+        self.solver.add(path.relation)
+        self.solver.push()
+        
+        self.stack_size = 0
+    
+    
+    def another(self):
+        
+        sat = self.solver.check()
+        if sat != z3.sat:
+            return None
+    
+        model = self.solver.model()
+
+        in_vector = [model[x].as_long() for x in self.path.input]
+        out_vector = [model[y].as_long() for y in self.path.output]
+
+        # make sure we don't generate the same sample twice
+        self.solver.add(z3.Not(z3.And(*[ x == model[x] for x in self.path.input])))
+        self.solver.add(z3.Not(z3.And(*[ y == model[y] for y in self.path.output])))
+
+        self.solver.push()
+        self.stack_size += 1
+        
+        return (in_vector, out_vector)
+
+    
+    def take(self, num):
+        v = []
+        for i in xrange(num):
+            d = self.another()
+
+            if d == None:
+                return v
+
+            v.append(d)
+
+        return v
+    
+    def reset(self):
+        while self.stack_size > 0:
+            self.solver.pop()
+            self.stack_size -= 1
+
+
 class ExecutionPath:
     """
     Represents the conditions for one execution path.
@@ -1220,6 +1276,7 @@ class ChoiceState:
 
 
 class FuncSynthesizer:
+
     """
     Function synthesizer
     Also adapts unknown_int and unknowon_choice in AST to train as template
@@ -1228,19 +1285,21 @@ class FuncSynthesizer:
     def __init__(self, astTree, fname = 'f'):
         self.func = UnknownHandlingExecutor(astTree, fname)
 
+
     def reverseData(self, data):
         """
-        Reverse input and output of the data set. Used when taining the inverse of a function.
+        Reverse input and output of the data set. Used when training the inverse of a function.
         """
         res = []
         for t in data:
             res.append([t[1], t[0]])
         return res;
     
+
     def genConditionsFrom(self, data, func = None):
         """
         Generate conditions from supplied data. Data has same format as return value of FunctionExecutor.genData
-        NOTE: for training the inverse fkt, use reverseData() first to swap input/outpu of the training data
+        NOTE: for training the inverse fkt, use reverseData() first to swap input/output of the training data
         """
         condProg = []
         if func is None:
@@ -1248,7 +1307,9 @@ class FuncSynthesizer:
 
         pathLog = PathLog()
         func.resetPath()
+
         while func.nextPath():
+
             extraCondForced = []
             inVars = [ z3.Int('InSym_1_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
             inVars2 = [ z3.Int('InSym_2_'+str(func.choice)+'_'+str(i)) for i in range(len(func.spec.args)) ]
@@ -1342,8 +1403,9 @@ class FuncSynthesizer:
                 
         return unknown_vars, unknown_choices
 
-    def solveUnknowns(self, fd, func = None):
-        conds = self.genConditionsFrom(fd, func)
+    def solveUnknowns(self, training_data, func = None):
+
+        conds = self.genConditionsFrom(training_data, func)
         #print conds
         solver = z3.Solver()
         
@@ -1383,33 +1445,37 @@ class FuncSynthesizer:
         return hypo
 
 
-    def filterHypos(self, fd, hypos, k = 1):
+    def filterHypos(self, training_data, hypos, k = 1):
+
         outHypo = []
         solution = []
         i = 0
         fd2 = []
-        while i < len(fd):
-            fd2.append(fd[i])
+
+        while i < len(training_data):
+            fd2.append(training_data[i])
             i += k
         
         for hypo in hypos:
             try:
-                ukv, ukc = self.solveUnknowns(fd, hypo)
+                ukv, ukc = self.solveUnknowns(training_data, hypo)
             except:
                 # Any exception... treat as unsat hypo
                 continue
-            if(ukv is not None):
+
+            if ukv is not None:
                 solution.append(ukv)
                 outHypo.append(hypo)
+
         return (outHypo, solution)
     
-    def solveHypos(self, fd, hypos, k = 5):
+    def solveHypos(self, training_data, hypos, k = 5):
         validHypos = hypos
         i = k
         while(i > 0):
             if len(validHypos) == 0:
                 return ([], [])
-            (validHypos, solutions) = self.filterHypos(fd, validHypos, i)
+            (validHypos, solutions) = self.filterHypos(training_data, validHypos, i)
             i = i >> 1
         return (validHypos, solutions)
     
@@ -1420,8 +1486,6 @@ class FuncSynthesizer:
                 continue
             rv.append(FunctionExecutor( self.template(sol, None, hypos[i]), 'f_inv'))
         return rv
-
-
 
 
 def solve_app(program, tests):
@@ -1452,6 +1516,28 @@ def solve_app(program, tests):
     return out_vec
 
 
+def generate_training_data_for_synthesizer(paths, k):
+
+    """
+    Generates k input/output samples per path
+    
+    Format:
+    
+    [
+    [[out1, out2, ... , outN], [in1, in2, ... , inN]]
+    [[out1, out2, ... , outN], [in1, in2, ... , inN]]
+    ...
+    [[out1, out2, ... , outN], [in1, in2, ... , inN]]
+    ]
+    """
+
+    data = []
+    for path in paths:
+        for x, y in PathDataGenerator(path).take(k):
+            data.append([y, x])
+    
+    return data
+
 
 def syn_app(program):
 
@@ -1461,26 +1547,29 @@ def syn_app(program):
     if WITH_HYPO:
         setMulti = 16
     
-    funcAnalyzer = FuncAnalyzer(tree, 'f')
-    origfunc = FunctionExecutor(tree, 'f')
+    analyzer = FunctionAnalyzer(find_function(tree, 'f'))
+    analyzer.analyze(True)
+    
+    if analyzer.is_irreversible:
+        return "Unsat"
+
     funcSynth = FuncSynthesizer(tree, 'f_inv')
 
-    trainingData = funcAnalyzer.genInput(setMulti)
-    trainingData = origfunc.genData(trainingData)
-    trainingData = funcSynth.reverseData(trainingData)
-    logging.debug(trainingData)
+    training_data = generate_training_data_for_synthesizer(analyzer.paths, setMulti*(len(find_function(tree, 'f').args.args) + 1))
+
+    logging.debug(training_data)
     
     if WITH_HYPO:
         hypos = funcSynth.genHypotheses()
-        (hypos, solutions) = funcSynth.solveHypos(trainingData, hypos, 16)
+        (hypos, solutions) = funcSynth.solveHypos(training_data, hypos, 16)
         funcs = funcSynth.templateHypos(hypos, solutions)
-        if(len(funcs) == 0):
+        if len(funcs) == 0:
             return "Unsat"
         
         return ast_to_source(find_function(funcs[0].tree, 'f_inv'))
     
     else:
-        unknown_vars, unknown_choices = funcSynth.solveUnknowns(trainingData)
+        unknown_vars, unknown_choices = funcSynth.solveUnknowns(training_data)
         if unknown_vars is None:
             return "Unsat"
         

@@ -74,7 +74,7 @@ class Sample(FunctionLoader):
                 return node
 
 
-def generate(f, num_args):
+def generate_output_space(f, num_args):
     
     assert(1 <= num_args and num_args <= 2)
     
@@ -126,7 +126,7 @@ class SampleTester:
             
             if len(self.sample.get_f().args.args) <= 2:
                 # for such a small parameter space it's ok to use a brute-force approach
-                valid_y = generate(f, len(self.sample.get_f().args.args))
+                valid_y = generate_output_space(f, len(self.sample.get_f().args.args))
             else:
                 # TODO: find a good way to check 'Unsat' for bigger parameter space
                 valid_y = set()
@@ -157,12 +157,15 @@ class SampleTester:
                             ", ".join(map(str, y_actual))
                             )
                         break
+
                 else:
                     if isinstance(y, list):
                         y = tuple(y)
 
                     if y in valid_y:
-                        print("Incorrectly yiled 'Unsat' because (%s) is part of f's output!" %
+                        # TODO: that's not correct
+                        # but we don't have any samples where this matters
+                        print("Incorrectly yielded 'Unsat' because (%s) is part of f's output space!" %
                               ", ".join(map(str, y)))
                         break
 
