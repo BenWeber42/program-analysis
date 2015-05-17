@@ -1,96 +1,16 @@
-# using a binary search to calculate the square root
-# using bruteforce we've shown that f_inv(*f(x)) = x for x in [-1000, 1000]
-def f_inv(y1, y2):
+# reference solution for all performance2.*.py examples
 
-    lower = 0
-    upper = 1001
+def f_inv(y1, y2, y3, y4):
+    if y4 == 0:
+        return y1, y2, y3
 
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
+    if y2 >= 30:
+        x1 = y1/y3
+        x2 = y2/x1
+        x3 = y3/x2
+        return x1, x2, x3
     else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    mid = (lower + upper)/2
-
-    if mid*mid <= y1:
-        lower = mid
-    else:
-        upper = mid
-
-    x = (lower + upper)/2
-
-    if y2 == 0:
-        return +x
-    return -x
+        x2 = 2*y3/y1 - y3/y1
+        x1 = y2/x2
+        x3 = y1/x1
+        return x1, x2, x3
