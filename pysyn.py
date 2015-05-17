@@ -1692,7 +1692,7 @@ def syn_app(program):
 
     setMulti = 32
     if WITH_HYPO:
-        setMulti = 32
+        setMulti = 16
     
     analyzer = FunctionAnalyzer(find_function(tree, 'f'))
     analyzer.analyze(True)
