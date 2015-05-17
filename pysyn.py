@@ -524,6 +524,125 @@ class PathDataGenerator:
             self.stack_size -= 1
 
 
+class DiversePathDataGenerator:
+    
+    """
+    Generates input/output samples with a strong emphasize on diversity
+    """
+    
+    def __init__(self, path):
+        self.path = path
+
+        self.solver = z3.Solver()
+        self.solver.add(path.constraints)
+        self.solver.add(path.relation)
+        self.solver.push()
+        
+    
+    def generate_one(self):
+        
+        # try to find one
+        if self.solver.check() != z3.sat:
+            return None, None
+        
+        # extract solution
+        model = self.solver.model()
+
+        x_vec = [ model[x] for x in self.path.input ]
+        y_vec = [ model[y] for y in self.path.output ]
+        
+        if None in x_vec or None in y_vec:
+            return None, None
+        
+        x_vec = [ x.as_long() for x in x_vec]
+        y_vec = [ y.as_long() for y in y_vec]
+        
+        return [y_vec, x_vec]
+    
+    
+    def generate_k_for_dimension(self, k, d, avoid = []):
+        
+        assert(d < len(self.path.input))
+        
+        self.solver.push()
+
+        # make sure we get a new value for the given dimension d
+        self.solver.add([ self.path.input[d] != x[d] for x in avoid ])
+        
+        xs = []
+        ys = []
+        for i in xrange(k):
+            y, x = self.generate_one()
+
+            if x is None or y is None:
+                break
+            
+            xs.append(x)
+            ys.append(y)
+
+            self.solver.add([ self.path.input[d] != x[d] ])
+        
+        self.solver.pop()
+        
+        return ys, xs
+        
+    
+    def generate_k_per_dimension(self, k):
+        
+        xs = []
+        ys = []
+
+        for d in range(len(self.path.input)):
+            _ys, _xs = self.generate_k_for_dimension(k, d, xs)
+
+            xs += _xs
+            ys += _ys
+        
+        return ys, xs
+    
+    
+    def generate_k_different(self, k, avoid = []):
+        
+        self.solver.push()
+        
+        for x in avoid:
+            self.solver.add(z3.Not(z3.And(*[ self.path.input[d] == x[d] for d in xrange(len(self.path.input)) ])))
+            
+        xs = []
+        ys = []
+        for i in xrange(k):
+
+            y, x = self.generate_one()
+            
+            if x is None or y is None:
+                break
+            
+            xs.append(x)
+            ys.append(y)
+            
+            self.solver.add(z3.Not(z3.And(*[ self.path.input[d] == x[d] for d in xrange(len(self.path.input)) ])))
+        
+        self.solver.pop()
+        
+        return ys, xs
+    
+
+    def generate(self, k):
+        
+        ys, xs = self.generate_k_per_dimension(k)
+        
+        _ys, _xs = self.generate_k_different(k, xs)
+        ys += _ys
+        xs += _xs
+        
+        out = []
+        
+        for y, x in zip(ys, xs):
+            out.append([y, x])
+        
+        return out
+
+
 class ExecutionPath:
     """
     Represents the conditions for one execution path.
@@ -1562,8 +1681,7 @@ def generate_training_data_for_synthesizer(paths, k):
 
     data = []
     for path in paths:
-        for x, y in PathDataGenerator(path).take(k):
-            data.append([y, x])
+        data += DiversePathDataGenerator(path).generate(k)
     
     return data
 
@@ -1574,7 +1692,7 @@ def syn_app(program):
 
     setMulti = 32
     if WITH_HYPO:
-        setMulti = 16
+        setMulti = 32
     
     analyzer = FunctionAnalyzer(find_function(tree, 'f'))
     analyzer.analyze(True)
