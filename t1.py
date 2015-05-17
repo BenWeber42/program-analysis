@@ -86,7 +86,7 @@ def f(x1, x2, x3):
         return 0, 0, 0
     
     # a special case of python's short-circuit logic that will avoid exceptions
-    if x1 == 0 and x1 == 1 and x1/0 == 8 or k == 3:
+    if x1 == 0 and x1 == 1 and x1/0 == 8 and k == 3:
         # deadcode
 
         # would raise a ValueError
